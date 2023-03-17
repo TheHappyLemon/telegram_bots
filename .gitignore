@@ -1,3 +1,16 @@
+# sys
+.bash_history
+.bash_logout
+.bashrc
+.local/
+.profile
+.ssh/
+.sudo_as_admin_successful
+pyenv/
+
+# TOKENS
+scripts_bot/constants.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

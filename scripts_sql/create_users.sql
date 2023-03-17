@@ -1,0 +1,8 @@
+CREATE TABLE USERS (
+    ID INT NOT NULL AUTO_INCREMENT,
+    tg_id VARCHAR(255),
+    name VARCHAR(255),
+    sts INT DEFAULT 0,
+    PRIMARY KEY (ID)
+);
+
