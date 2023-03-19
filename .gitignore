@@ -7,7 +7,7 @@
 .ssh/
 .sudo_as_admin_successful
 pyenv/
-
+/photos
 # TOKENS
 scripts_bot/constants.py
 
