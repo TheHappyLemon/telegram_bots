@@ -1,5 +1,5 @@
 import logging
-import pathlib
+import aiofiles
 from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, executor, types
 from constants import *
@@ -11,12 +11,37 @@ dp  = Dispatcher(bot)
 
 @dp.message_handler(commands=['help'])
 async def send_welcome(message: types.Message):
-    res = "Hi! I'm WishListBot!\nPowered by artkuc 😎\nHere are my commands:\n"
-    res = res + "1) /help - help itself\n"
-    res = res + "2) /users - list all users\n"
-    res = res + "3) /ideas - list all ideas\n"
-    res = res + "4) /friends - list all friends\n"
-    await message.reply(res)
+    msg = "Hi! I'm WishListBot!\nPowered by artkuc 😎\nHere are my commands:\n"
+    await handle_user(str(message.from_user.id), message.from_user.username)
+    answ = await get_column("""SELECT data FROM HELP""")
+    for i in range(len(answ)):
+        msg = msg + str(i + 1) + ") " + answ[i] + "\n" 
+    await message.answer(msg)
+
+@dp.message_handler(commands=['get_image'])
+async def get_image(message: types.Message):
+    # This handler function listens for the /get_image command and 
+    # expects an image ID to be provided in the format /get_image <image_id>.
+    await handle_user(str(message.from_user.id), message.from_user.username)
+    try:
+        image_id = int(message.text.split()[1])
+    except IndexError:
+        await message.answer("Please provide an image ID")
+        return
+    except ValueError:
+        await message.answer("Invalid image ID")
+        return
+    path = await get_column(f"SELECT img_path FROM IMAGES WHERE ID = {image_id}")
+    print(path)
+    if len(path) == 0:
+        await message.answer("Image not found")
+        return
+    async with aiofiles.open(path[0], 'rb') as f:
+        photo_bytes = await f.read()
+        await bot.send_photo(chat_id=message.from_user.id, photo=photo_bytes)
+    # with open(path[0], 'rb') as f:
+        # img = f.read()
+    # await bot.send_photo(chat_id=message.from_user.id, photo=img)
 
 async def get_data(query : str):  
     db  = _mysql.connect(host="localhost", user=usr,
@@ -29,7 +54,8 @@ async def get_data(query : str):
     for query_row in query_res:
         str_row = str(i + 1) + ") "
         for column in query_row:
-            str_row = str_row + column + ":" + str(query_row[column], "utf-8") + " "
+            data = "NULL" if query_row[column] == None else str(query_row[column], "utf-8")
+            str_row = str_row + column + ":" + data + " "
         str_res = str_res + str_row + "\n"
         i = i + 1
     if str_res == "":
@@ -43,7 +69,6 @@ async def get_column(query : str):
     db.query(query)
     query_res = db.store_result()
     query_res = query_res.fetch_row(maxrows=0, how = 1)
-    print(query_res)
     i = 0
     list_res = []
     for query_row in query_res:
@@ -80,6 +105,12 @@ async def get_ideas(message: types.Message):
 async def get_friends(message: types.Message):
     await handle_user(str(message.from_user.id), message.from_user.username)
     answ = await get_data("""SELECT * FROM FRIENDS""")
+    await message.answer(answ)
+
+@dp.message_handler(commands=['images'])
+async def get_images(message: types.Message):
+    await handle_user(str(message.from_user.id), message.from_user.username)
+    answ = await get_data("""SELECT * FROM IMAGES""")
     await message.answer(answ)
 
 @dp.message_handler(commands=['me'])
