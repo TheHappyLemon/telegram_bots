@@ -11,34 +11,47 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
     db  = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)
     if code.startswith("back"):
-        q = f"""SELECT DATA, btn_name FROM Buttons WHERE keyboardId=(SELECT keyboardId FROM Buttons WHERE ID=(SELECT parentId FROM Buttons WHERE btn_name = '{code}'));"""
+        q = f"""SELECT DATA, btn_name, label, isParent FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}'));"""
     else:
-        q = f"SELECT DATA, btn_name FROM Buttons WHERE parentId=(SELECT ID FROM Buttons WHERE btn_name='{code}')"
+        q = f"SELECT DATA, btn_name, label, isParent FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}')"
     db.query(q)
     results = db.store_result()
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    for row in results.fetch_row(maxrows=0, how=1):
-        data = row['DATA'].decode('utf-8')
-        btn_name = row['btn_name'].decode('utf-8')
-        button = InlineKeyboardButton(text=data, callback_data=btn_name)
-        keyboard.add(button)
-    db.close()
-    await bot.send_message(callback_query.from_user.id, f'Choose an option:', reply_markup=keyboard) 
+    results = results.fetch_row(maxrows=0, how=1)
+    if len(results) == 0:
+        # Regular button
+        q = f"""SELECT command FROM BUTTONS WHERE btn_name = '{code}' LIMIT 1;"""
+        db.query(q)
+        results = db.store_result()
+        results = results.fetch_row(maxrows=0, how=1)
+        q = results[0]['command'].decode('utf-8')
+        if q.startswith("SELECT"):
+            db.close()
+            answ = await get_data(q)
+            await bot.send_message(callback_query.from_user.id, answ)
+    else:
+        # button to another keyboard
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        for row in results:
+            data = row['DATA'].decode('utf-8')
+            btn_name = row['btn_name'].decode('utf-8')
+            label = row['label'].decode('utf-8')
+            button = InlineKeyboardButton(text=data, callback_data=btn_name)
+            keyboard.add(button)
+        await bot.send_message(callback_query.from_user.id, label, reply_markup=keyboard)
+        db.close()
+     
     
-
 # Initial
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp  = Dispatcher(bot)
 dp.register_callback_query_handler(get_nested_keyboard)
 
-@dp.message_handler(commands=['start'])
 async def get_start_keyboard(message: types.Message):
-    tg_id = str(message.from_user.id)
     await handle_user(str(message.from_user.id), message.from_user.username)   
     db  = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)    
-    db.query("SELECT DATA, btn_name FROM Buttons WHERE keyboardId=0")
+    db.query("SELECT DATA, btn_name FROM BUTTONS WHERE keyboardId=0")
     result = db.store_result()
     keyboard = InlineKeyboardMarkup(row_width=2)
     for row in result.fetch_row(maxrows=0, how=1):
@@ -46,7 +59,8 @@ async def get_start_keyboard(message: types.Message):
         btn_name = row['btn_name'].decode('utf-8')
         button = InlineKeyboardButton(text=data, callback_data=btn_name)
         keyboard.add(button)
-    await message.answer("Hello!\nPlease, choose an option:", reply_markup=keyboard)
+    return keyboard
+    
 
 @dp.message_handler(commands=['help'])
 async def send_welcome(message: types.Message):
@@ -128,29 +142,6 @@ async def handle_user(tg_id: str, name: str):
     if answ == "EMPTY":
         await insert_data(f"INSERT INTO USERS (tg_id, name, sts) VALUES ({tg_id}, '{name}', 0);")
 
-@dp.message_handler(commands=['users'])
-async def get_users(message: types.Message):
-    await handle_user(str(message.from_user.id), message.from_user.username)
-    answ = await get_data("""SELECT * FROM USERS""")
-    await message.answer(answ)
-
-@dp.message_handler(commands=['ideas'])
-async def get_ideas(message: types.Message):
-    await handle_user(str(message.from_user.id), message.from_user.username)
-    answ = await get_data("""SELECT * FROM IDEAS""")
-    await message.answer(answ)
-
-@dp.message_handler(commands=['friends'])
-async def get_friends(message: types.Message):
-    await handle_user(str(message.from_user.id), message.from_user.username)
-    answ = await get_data("""SELECT * FROM FRIENDS""")
-    await message.answer(answ)
-
-@dp.message_handler(commands=['images'])
-async def get_images(message: types.Message):
-    await handle_user(str(message.from_user.id), message.from_user.username)
-    answ = await get_data("""SELECT * FROM IMAGES""")
-    await message.answer(answ)
 
 @dp.message_handler(commands=['me'])
 async def get_me(message: types.Message):
@@ -180,8 +171,8 @@ async def get_img(message: types.Message):
 
 @dp.message_handler()
 async def echo(message: types.Message):
-    await message.answer(message.text)
-
+    keyboard = await get_start_keyboard(message)
+    await message.answer("I'm not a chat bot:(\nUse buttons, please:", reply_markup=keyboard)
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
