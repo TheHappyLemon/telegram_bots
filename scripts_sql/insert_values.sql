@@ -8,7 +8,7 @@ INSERT INTO IDEAS(isPublic, descr, price, origin, user_id) VALUES(0, 'dscription
 INSERT INTO FRIENDS(idea_id, user_id) VALUES(1,2);
 INSERT INTO FRIENDS(idea_id, user_id) VALUES(1,3);
 INSERT INTO FRIENDS(idea_id, user_id) VALUES(3,1);
-INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image1.jpg', 1);
-INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image2.jpg', 1);
-INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image3.jpg', 2);
-INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image4.jpg', 3);
+-- INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image1.jpg', 1);
+-- INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image2.jpg', 1);
+-- INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image3.jpg', 2);
+-- INSERT INTO IMAGES (img_path, idea_id) VALUES ('/path/to/image4.jpg', 3);

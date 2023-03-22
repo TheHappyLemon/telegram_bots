@@ -3,11 +3,50 @@ import aiofiles
 from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, executor, types
 from constants import *
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.dispatcher import FSMContext
+
+async def get_nested_keyboard(callback_query: types.CallbackQuery):
+    code = callback_query.data
+    db  = _mysql.connect(host="localhost", user=usr,
+                        password=pswd, database=dbase)
+    if code.startswith("back"):
+        q = f"""SELECT DATA, btn_name FROM Buttons WHERE keyboardId=(SELECT keyboardId FROM Buttons WHERE ID=(SELECT parentId FROM Buttons WHERE btn_name = '{code}'));"""
+    else:
+        q = f"SELECT DATA, btn_name FROM Buttons WHERE parentId=(SELECT ID FROM Buttons WHERE btn_name='{code}')"
+    db.query(q)
+    results = db.store_result()
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    for row in results.fetch_row(maxrows=0, how=1):
+        data = row['DATA'].decode('utf-8')
+        btn_name = row['btn_name'].decode('utf-8')
+        button = InlineKeyboardButton(text=data, callback_data=btn_name)
+        keyboard.add(button)
+    db.close()
+    await bot.send_message(callback_query.from_user.id, f'Choose an option:', reply_markup=keyboard) 
+    
 
 # Initial
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp  = Dispatcher(bot)
+dp.register_callback_query_handler(get_nested_keyboard)
+
+@dp.message_handler(commands=['start'])
+async def get_start_keyboard(message: types.Message):
+    tg_id = str(message.from_user.id)
+    await handle_user(str(message.from_user.id), message.from_user.username)   
+    db  = _mysql.connect(host="localhost", user=usr,
+                        password=pswd, database=dbase)    
+    db.query("SELECT DATA, btn_name FROM Buttons WHERE keyboardId=0")
+    result = db.store_result()
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    for row in result.fetch_row(maxrows=0, how=1):
+        data = row['DATA'].decode('utf-8')
+        btn_name = row['btn_name'].decode('utf-8')
+        button = InlineKeyboardButton(text=data, callback_data=btn_name)
+        keyboard.add(button)
+    await message.answer("Hello!\nPlease, choose an option:", reply_markup=keyboard)
 
 @dp.message_handler(commands=['help'])
 async def send_welcome(message: types.Message):
@@ -138,10 +177,9 @@ async def get_img(message: types.Message):
     # INSERT INTO IMAGES (path) VALUES ('/path/to/image.jpg');
     await insert_data(f"INSERT INTO IMAGES (img_path, idea_id) VALUES ('{path}', 1);")
 
+
 @dp.message_handler()
 async def echo(message: types.Message):
-    print(type(message.from_user.id))
-    print(message.from_user.id)
     await message.answer(message.text)
 
 
