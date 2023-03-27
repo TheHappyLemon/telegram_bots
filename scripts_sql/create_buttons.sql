@@ -5,9 +5,9 @@ CREATE TABLE BUTTONS (
     keyboardId INT NOT NULL,
     isParent TINYINT NOT NULL,
     parentId INT,
-    label VARCHAR(255),
-    command VARCHAR(255),
-    PRIMARY KEY (ID, DATA),
+    btn_inf  INT,
+    ordr INT,
+    PRIMARY KEY (ID, btn_name),
     FOREIGN KEY (parentId) REFERENCES BUTTONS(ID)
 );
 
