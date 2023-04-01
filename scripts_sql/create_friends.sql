@@ -1,8 +1,9 @@
 CREATE TABLE FRIENDS (
-    ID INT NOT NULL AUTO_INCREMENT,
-    idea_id INT NOT NULL,
-    user_id INT NOT NULL,
-    FOREIGN KEY (idea_id) REFERENCES IDEAS(ID),
-    FOREIGN KEY (user_id) REFERENCES USERS(ID),
-    PRIMARY KEY (ID)
+  user_id BIGINT NOT NULL,
+  friend_id BIGINT NOT NULL,
+  PRIMARY KEY (user_id, friend_id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_friend_id (friend_id),
+  FOREIGN KEY (user_id) REFERENCES USERS(tg_id),
+  FOREIGN KEY (friend_id) REFERENCES USERS(tg_id)
 );

@@ -12,7 +12,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
     await reset_status(str(callback_query.from_user.id))
     print(code, "pressed")
     # Get label to write
-    q = f"""SELECT label, command, status, onlyData FROM BUTTON_INF WHERE ID = (SELECT btn_inf FROM BUTTONS WHERE btn_name='{code}') LIMIT 1"""
+    q = f"""SELECT label, command, status, onlyData FROM BUTTON_INF WHERE btn_id = (SELECT btn_inf FROM BUTTONS WHERE btn_name='{code}') LIMIT 1"""
     print(q)
     db.query(q)
     results = db.store_result()
@@ -37,9 +37,9 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
     print(command)
     # Get keyboard
     if code.startswith("back"):
-        q = f"""SELECT DATA, btn_name, isParent FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}'));"""
+        q = f"""SELECT DATA, btn_name, isParent FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}')) ORDER BY ordr ASC;"""
     else:
-        q = f"SELECT DATA, btn_name, isParent FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}')"
+        q = f"SELECT DATA, btn_name, isParent FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}') ORDER BY ordr ASC"
     db.query(q)
     results = db.store_result()
     results = results.fetch_row(maxrows=0, how=1)
@@ -61,6 +61,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                     command = command.replace(param, tmp, 1)
                     pos = command.find(param)
                     i = i + 1
+                print(command)
             db.close()
             answ = await get_data(command, onlyData)
             print(answ)
@@ -71,8 +72,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
             queries = []
             queries.append(f"UPDATE USERS SET sts_chat = '{status}' WHERE tg_id = {callback_query.from_user.id};")
             await insert_data(queries)
-            await bot.send_message(callback_query.from_user.id, command)
-
+            await bot.send_message(callback_query.from_user.id, command, parse_mode='MarkdownV2')
             print(command, status)
     else:
         # button to another keyboard
@@ -94,10 +94,10 @@ dp  = Dispatcher(bot)
 dp.register_callback_query_handler(get_nested_keyboard)
 
 async def get_start_keyboard(message: types.Message):
-    await handle_user(str(message.from_user.id), message.from_user.username)   
+    await handle_user(message.from_user.id, message.from_user.username)   
     db  = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)    
-    db.query("SELECT DATA, btn_name FROM BUTTONS WHERE keyboardId=0")
+    db.query("SELECT DATA, btn_name FROM BUTTONS WHERE keyboardId=0 ORDER BY ordr ASC")
     result = db.store_result()
     keyboard = InlineKeyboardMarkup(row_width=2)
     for row in result.fetch_row(maxrows=0, how=1):
@@ -111,7 +111,7 @@ async def get_start_keyboard(message: types.Message):
 async def get_image(message: types.Message):
     # This handler function listens for the /get_image command and 
     # expects an image ID to be provided in the format /get_image <image_id>.
-    await handle_user(str(message.from_user.id), message.from_user.username)
+    await handle_user(message.from_user.id, message.from_user.username)
     try:
         image_id = int(message.text.split()[1])
     except IndexError:
@@ -178,7 +178,7 @@ async def insert_data(queries : list):
     db.commit()  # commit the changes made to the database
     db.close() 
 
-async def handle_user(tg_id: str, name: str):
+async def handle_user(tg_id: int, name: str):
     answ = await get_data(f"SELECT * FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
     if answ == "EMPTY":
         queries = []
@@ -198,8 +198,7 @@ async def reset_status(tg_id: str):
 
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def get_img(message: types.Message):
-    tg_id = str(message.from_user.id)
-    await handle_user(str(message.from_user.id), message.from_user.username)
+    await handle_user(message.from_user.id, message.from_user.username)
     answ = await get_column("SELECT ID FROM IMAGES ORDER BY ID DESC LIMIT 1;")
     if len(answ) == 0:
         answ = "1"
@@ -228,42 +227,174 @@ async def parse_msg(msg : str, force : bool = False):
 
 @dp.message_handler()
 async def echo(message: types.Message):
-    await handle_user(str(message.from_user.id), message.from_user.username)
+    await handle_user(message.from_user.id, message.from_user.username)
     answ = await get_column(f"SELECT sts_chat FROM USERS WHERE tg_id = {message.from_user.id}")
     if len(answ) == 0:
         await message.answer("No status, something went wrong\!", reply_markup=keyboard, parse_mode='MarkdownV2')
         return
     keyboard = None
     queries = []
+    # IDEA BUTTON STATUSES
     if answ[0] == "IDEA_CRE":
-        query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{message.text.lower()}' AND user_id  = (SELECT ID FROM USERS WHERE tg_id = {message.from_user.id} AND sts <> 9 LIMIT 1);"
+        idea_name = await parse_msg(message.text.lower().strip(), force=True)
+        query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} AND sts <> 9 LIMIT 1;"
         answ = await get_column(query_get)
         if (len(answ)) == 0:
-            queries.append(f"INSERT INTO IDEAS (user_id, name) VALUES ((SELECT ID FROM USERS WHERE tg_id = {message.from_user.id} LIMIT 1), '{message.text}');")
+            queries.append(f"INSERT INTO IDEAS (user_id, name) VALUES ({message.from_user.id}, '{idea_name}');")
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-            msg = f"Idea {message.text} created\!"
+            msg = f"Idea {idea_name} created\!"
         else:
             msg = f"You already have an idea named *{message.text}*\n\nChoose another *name*"
-    elif answ[0] == "IDEA_MOD":
-        pass
     elif answ[0] == "IDEA_DEL":
-        query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{message.text.lower()}' AND user_id  = (SELECT ID FROM USERS WHERE tg_id = {message.from_user.id} AND sts <> 9 LIMIT 1);"
+        idea_name = await parse_msg(message.text.lower().strip(), force=True)
+        query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{idea_name}' AND user_id  = {message.from_user.id} AND sts <> 9 LIMIT 1;"
         answ = await get_column(query_get)
         if (len(answ)) == 0:
-            msg = f"You do not have an idea named *{message.text}*" 
+            msg = f"You do not have an idea named *{idea_name}*" 
         else:
-            queries.append(f"UPDATE IDEAS set sts = 9 WHERE LOWER(name) = '{message.text.lower()}' AND user_id  = (SELECT ID FROM USERS WHERE tg_id = {message.from_user.id} LIMIT 1);")
+            queries.append(f"UPDATE IDEAS set sts = 9 WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-            msg = f"Idea *{message.text}* deleted\!"
+            msg = f"Idea *{idea_name}* deleted\!"
+    # SETTINGS BUTTON STATUSES
     elif answ[0] == "ME_INP":
-        queries.append(f"UPDATE USERS SET name = '{message.text}' WHERE tg_id = {message.from_user.id};")
-        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-        msg = f"Nice to meet you, *{message.text}*\!"
+        name = await parse_msg(message.text.strip(), force=True)
+        answ = await get_column(f"SELECT tg_id FROM USERS WHERE name = '{name}'")
+        if len(answ) == 0:
+            queries.append(f"UPDATE USERS SET name = '{name}' WHERE tg_id = {message.from_user.id};")
+            queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+            msg = f"Nice to meet you, *{name}*\!"
+        else:
+            msg = f"Username, *{name}* is already taken\!\nTry something else."
+    # MODIFY IDEA BUTTON STATUSES
+    elif answ[0] == "MODI_NME":
+        pass
+    elif answ[0] == "MODI_DES":
+        pass
+    elif answ[0] == "MODI_PRC":
+        pass
+    elif answ[0] == "MODI_ORI":
+        pass
+    # SET PRIVACY BUTTON STATUSES
+    elif answ[0] == "ACCS_CHG":
+        data = message.text.split()
+        idea_name_out = await parse_msg(data[0], force=True)
+        idea_name_in = data[0]
+        query_get = f"SELECT ID FROM IDEAS WHERE name = '{idea_name_in}' LIMIT 1"
+        answ = await get_column(query_get)
+        if len(answ) == 0:
+            msg = f"You do not have an idea named *{idea_name_out}*"
+        else:
+            acces = data[1].lower()
+            if acces in accs_options:
+                queries.append(f"UPDATE IDEAS SET isPublic = {accs_options[acces]} WHERE id = {answ[0]}")
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Acces changed\!\nIdea *{idea_name_out}* is now *{acces}*"
+            else:
+                msg = f"Bad input in *{acces}*"
+    elif answ[0] == "ACCS_RMV":
+        pass
+    elif answ[0] == "ACCS_SEE":
+        # not tested
+        idea_name_out = await parse_msg(message.text.lower().strip(), force=True)
+        idea_name_in  = message.text.lower().strip()
+        query_get = f"SELECT isPublic FROM IDEAS WHERE user_id = {message.from_user.id} AND LOWER(name) = '{idea_name_in}'"
+        answ = await get_column(query_get)
+        if len(answ) == 0:
+            msg = f"You do not have an idea named *{idea_name_out}*"
+        else:
+            if answ[0] == "1":
+                msg = f"Idea is *public*\.\n*Everyone* can see it\."
+            else:
+                msg = f"Idea is *private*\. Only following friends can see it:\n"
+                query_get = f"""SELECT tg_id, name from USERS 
+                    WHERE tg_id IN (SELECT friend_id FROM FRIENDS WHERE user_id = {message.from_user.id}) AND 
+                    tg_id NOT IN (SELECT user_id FROM IDEAS_INF WHERE idea_id = 
+                    (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND LOWER(name) = '{idea_name_in}'));"""
+                answ = await get_data(query_get)
+                msg = msg + answ
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+    # FRIENDS BUTTON STATUSES
+    elif answ[0] == "FRND_ADD":
+        friend_name_in  = message.text.strip()
+        friend_name_out = await parse_msg(message.text.strip(), force=True)
+        query_get = f"SELECT tg_id FROM USERS WHERE name = '{friend_name_in}' LIMIT 1"
+        answ = await get_column(query_get)
+        if len(answ) == 0:
+            msg = f"User with name *{friend_name_out}* does not exist"
+        else:
+            friend_id = answ[0]
+            query_get = f"SELECT user_id FROM FRIENDS WHERE (user_id = {message.from_user.id} AND friend_id = {friend_id}) OR (user_id = {friend_id} AND friend_id = {message.from_user.id})"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                query_get = f"SELECT sts FROM FR_REQUESTS WHERE user_from = {message.from_user.id} AND user_to = {friend_id}"
+                answ = await get_column(query_get)
+                if len(answ) == 0:
+                    queries.append(f"INSERT INTO FR_REQUESTS (user_from, user_to) VALUE ({message.from_user.id}, {friend_id})")
+                    msg = f"Request was sent to *{friend_name_out}* succesfully\!"
+                else:
+                    if answ[0] == "0":
+                        msg = f"User *{friend_name_out}* still have not answered to your previous request\!"
+                    elif answ[0] == "5":
+                        queries.append(f"UPDATE FR_REQUESTS SET sts = 0 WHERE (user_from = {message.from_user.id} AND user_to = {friend_id})")
+                        msg = f"User *{friend_name_out}* rejected your previous request\!\nBut another one is sent succesfully\!"
+            else:
+                msg = f"You and user *{friend_name_out}* are already friends\!"
+    elif answ[0] == "FRND_RMV":
+        # check if such user exists
+        friend_name_in  = message.text.strip()
+        friend_name_out = await parse_msg(message.text.strip(), force=True)
+        query_get = f"SELECT tg_id FROM USERS WHERE name = '{friend_name_in}' LIMIT 1"
+        answ = await get_column(query_get)
+        if len(answ) == 0:
+            msg = f"User with name *{friend_name_out}* does not exist\!"
+        else:
+            query_get = f"SELECT user_id, friend_id FROM FRIENDS WHERE (user_id = {message.from_user.id} AND friend_id = {answ[0]}) OR (user_id = {answ[0]} AND friend_id = {message.from_user.id})"
+            db  = _mysql.connect(host="localhost", user=usr,
+                        password=pswd, database=dbase)  
+            db.query(query_get)
+            query_res = db.store_result()
+            query_res = query_res.fetch_row(maxrows=0, how=1)
+            if len(query_res) == 0:
+                msg = f"You arent friends with *{friend_name_out}* anyways\!"
+            else:
+                for row in query_res:
+                    usr_id = str(row['user_id']  , "utf-8")
+                    frd_id = str(row['friend_id'], "utf-8")
+                    queries.append(f"DELETE FROM FRIENDS WHERE user_id = {usr_id} AND friend_id = {frd_id}")
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"You and user *{friend_name_out}* are not friends anymore\!"
+    # MY REQUESTS BUTTON STATUSES
+    elif answ[0] == "FRND_ACC" or answ[0] == "FRND_REJ":
+        friend_name_in  = message.text.strip()
+        friend_name_out = await parse_msg(message.text.strip(), force=True)
+        query_get = f"SELECT tg_id FROM USERS WHERE name = '{friend_name_in}' LIMIT 1"
+        answ_1 = await get_column(query_get)
+        if len(answ_1) == 0:
+            msg = f"User *{friend_name_out}* does not exist\!"
+        else:
+            friend_id = answ_1[0]
+            query_get = f"SELECT sts FROM FR_REQUESTS WHERE user_to = {message.from_user.id} AND user_from = {friend_id} LIMIT 1"
+            answ_1 = await get_column(query_get)
+            if len(answ_1) == 0 or answ_1[0] != "0":
+                msg = f"You do not have a request from user  *{friend_name_out}* \!"
+            else:
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                if answ[0] == "FRND_ACC":
+                    queries.append(f"INSERT INTO FRIENDS(user_id, friend_id) VALUES({message.from_user.id}, {friend_id})")
+                    queries.append(f"DELETE FROM FR_REQUESTS WHERE (user_to = {message.from_user.id} AND user_from = {friend_id})")
+                    msg = f"Request *ACCEPTED*\!\nYou and user *{friend_name_out}* are friends now\!"
+                elif answ[0] == "FRND_REJ":
+                    queries.append(f"UPDATE FR_REQUESTS SET sts = 5 WHERE (user_to = {message.from_user.id} AND user_from = {friend_id})")
+                    msg = f"Request *REJECTED*"
+    # DEFAULT STATUS HANDLER
     elif answ[0] == "IDLE":
         keyboard = await get_start_keyboard(message)
+        #msg = "Type following: *idea_name*"
         msg = ("I'm not a chat bot:\(\nUse *buttons*, please:")
     else:
         msg = await parse_msg("This function is currently *under construction*\nOur engineers are woorking *as hard as possible*, to get this thing going")
+    print('msg: ', msg)
     await message.answer(msg, reply_markup=keyboard, parse_mode='MarkdownV2')
     i = 0
     print()
@@ -272,9 +403,6 @@ async def echo(message: types.Message):
         i = i + 1
     print()
     await insert_data(queries)
-    #if answ[0] != "IDLE":
-        #await insert_data(queries)
-        #await message.answer(msg, parse_mode='MarkdownV2')
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
