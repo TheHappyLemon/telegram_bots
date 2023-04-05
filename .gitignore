@@ -1,3 +1,5 @@
+# lol
+*.sql
 # sys
 .bash_history
 .bash_logout
