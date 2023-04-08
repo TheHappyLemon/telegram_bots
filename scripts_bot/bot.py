@@ -1,30 +1,58 @@
 import logging
 import aiofiles
+import re
 from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, executor, types
 from constants import *
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from prettytable import PrettyTable
 
-async def handle_sub_query(callback_query : types.CallbackQuery, query : str, onlyData = False):
+async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, mode : str = "MarkdownV2"):
+    # maximum length of a telegram message is 4096 symbols. if msg is too big:
+    # 1 - find last newline in given interval (from <i> to <i + max_len>)
+    # 2 - create chunk from <i> to <\n pos>
+    # 3 - <i> = <\n pos + 1>
+    # repeat until <i> is less than length of a message
+    msg_list = []
+    if len(msg) >= MAX_MESSAGE_LENGTH:
+        i = 0
+        while i < len(msg):
+            left = i
+            right = i + MAX_MESSAGE_LENGTH
+            line = msg[left:right]
+            # this regex searches for the first newline from right side of a string
+            # i got it from chatgpt, because both rfind and find for some reason returned -1 even though
+            # in operator returned True... Super weird, but this works
+            match = re.search(r"\n(?=[^\n]*$)", line)
+            if match:
+                n = match.start() + left # match is in line but i need to get from whole msg
+            else:
+                n = -1
+            if n != -1:
+                line = msg[left:n+1]
+                i = n + 1
+            msg_list.append(line)
+    else:
+        msg_list.append(msg)
+    for chunk in msg_list:
+        if not(chunk == "" or chunk == '\n'):
+            await bot.send_message(to, chunk, reply_markup=keyboard, parse_mode=mode)
+    
+async def handle_sub_query(callback_query : types.CallbackQuery, query : str, onlyData = True):
     db = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)
     db.query(query)
     query_res = db.store_result()
     query_res = query_res.fetch_row(maxrows=0, how=1)
-    print("\nrec1")
     for row in query_res:
         command = str(row['sub_query'], "utf-8")
-        print("\nrec1. command = ", command)
         if command.startswith("SELECT IF"):
-            # recursion
-            await handle_sub_query(callback_query, command, onlyData)
+            return handle_sub_query(callback_query, command, onlyData)
         elif command.startswith("SELECT"):
-            # terminal 
-            answ = await get_data(command, onlyData)
-            await bot.send_message(callback_query.from_user.id, answ)
+            return await get_data(command, onlyData)
         else:
-            await bot.send_message(callback_query.from_user.id, command, parse_mode='MarkdownV2')
+            return command, len(query_res)
+    return "Error. handle sub query returned empty set"
 
 async def get_custom_column(tg_id : int, column : str = 'last_input'):
     query_get = f"SELECT {column} FROM USERS WHERE tg_id = {tg_id}"
@@ -32,7 +60,7 @@ async def get_custom_column(tg_id : int, column : str = 'last_input'):
     idea_name = idea_name[0]
     return idea_name
 
-async def parse_command(callback_query: types.CallbackQuery, command : str, status_out : str):
+async def parse_command(callback_query: types.CallbackQuery, command : str, status_out : str, rows : int = -1):
     if status_out != None:
         pos = command.find(param)
         status_out = status_out.split(",")
@@ -44,6 +72,8 @@ async def parse_command(callback_query: types.CallbackQuery, command : str, stat
             elif status_out[i] == 'last_input':
                 tmp = await get_column(f"SELECT last_input FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
                 tmp = tmp[0]
+            elif status_out[i] == 'rows_total':
+                tmp = str(rows)
             command = command.replace(param, tmp, 1)
             pos = command.find(param)
             i = i + 1
@@ -98,26 +128,25 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
         if len(results) == 0:
             # if it is a Regular button
             command = await parse_command(callback_query, command, status_out)
-            print('\n', "command = ", command)
             if command.startswith("SELECT IF"):
-                await handle_sub_query(callback_query, command)
+                answ, row_total = await handle_sub_query(callback_query, command, onlyData)
             elif command.startswith("SELECT"):
-                answ = await get_data(command, onlyData)
-                print("\nreceived:")
-                print(answ)
-                #await bot.send_message(callback_query.from_user.id, answ)
-                await bot.send_message(callback_query.from_user.id, answ, parse_mode='MarkdownV2')
+                answ, row_total = await get_data(command, onlyData)
             else:
                 # handle special commands with statuses
                 queries.append(f"UPDATE USERS SET sts_chat = '{status_inp}' WHERE tg_id = {callback_query.from_user.id};")
                 await insert_data(queries)
-                await bot.send_message(callback_query.from_user.id, command, parse_mode='MarkdownV2')
+                answ = command
+            if label != None:
+                label = await parse_command(callback_query, label, status_inp, row_total)
+                answ = label + '\n' + answ
+            await send_msg(callback_query.from_user.id, answ)
         else:
             # button to another keyboard
             if status_inp != None:
                 queries.append(f"UPDATE USERS SET sts_chat = '{status_inp}' WHERE tg_id = {callback_query.from_user.id};")
                 await insert_data(queries)
-                await bot.send_message(callback_query.from_user.id, command, parse_mode='MarkdownV2')
+                await send_msg(callback_query.from_user.id, command)
             else:
                 if command != None:
                     # Reset last input on back button
@@ -132,9 +161,9 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                     btn_name = row['btn_name'].decode('utf-8')
                     button = InlineKeyboardButton(text=data, callback_data=btn_name)
                     keyboard.add(button)
-                await bot.send_message(callback_query.from_user.id, label, reply_markup=keyboard)
+                await send_msg(callback_query.from_user.id, label, keyboard)
     except Exception as e:
-        await bot.send_message(callback_query.from_user.id, f"An error occured when handling your request!\nError message: {str(e)}\n\nContact an adminitrator :)")
+        await send_msg(callback_query.from_user.id, f"An error occured when handling your request\!\nError message: {str(e)}\n\nContact an adminitrator :\)")
             
 
 # Initial
@@ -182,51 +211,57 @@ async def get_image(message: types.Message):
         # img = f.read()
     # await bot.send_photo(chat_id=message.from_user.id, photo=img)
 
-async def get_data(query: str, onlyData: bool = False):
+# async def data_get(query: str, onlyData: bool = False):
+#     db = _mysql.connect(host="localhost", user=usr,
+#                         password=pswd, database=dbase)
+#     db.query(query)
+#     query_res = db.store_result()
+#     query_res = query_res.fetch_row(maxrows=0, how=1)
+#     table = PrettyTable()
+#     result_dict = {}
+#     # make a dict where key is every column from query and value is list of all values from all rows
+#     for key in query_res[0].keys():
+#         result_dict[key] = ["Empty" if d[key] == None else str(d[key], 'utf-8') for d in query_res]
+#     # add each column with values to prettytable
+#     for column in result_dict:
+#         table.add_column(column, result_dict[column])
+#     table.align = "l"
+#     table_string = table.get_string()
+#     # add code blocks, so telegram does not lose formatting.
+#     table_string = "```\n" + table_string + "\n```"
+#     return table_string
+
+async def get_data(query: str, onlyData: bool = True):
     db = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)
     db.query(query)
     query_res = db.store_result()
     query_res = query_res.fetch_row(maxrows=0, how=1)
-    table = PrettyTable()
-    result_dict = {}
-    # make a dict where key is every column from query and value is list of all values from all rows
-    for key in query_res[0].keys():
-        result_dict[key] = ["Empty" if d[key] == None else str(d[key], 'utf-8') for d in query_res]
-    # add each column with values to prettytable
-    for column in result_dict:
-        table.add_column(column, result_dict[column])
-    table.align = "l"
-    table_string = table.get_string()
-    # add code blocks, so telegram does not lose formatting.
-    table_string = "```\n" + table_string + "\n```"
-    return table_string
-
-
-# async def get_data(query: str, onlyData: bool = False):
-#     db = _mysql.connect(host="localhost", user=usr,
-#                         password=pswd, database=dbase)
-#     str_res = ""
-#     db.query(query)
-#     query_res = db.store_result()
-#     query_res = query_res.fetch_row(maxrows=0, how=1)
-#     i = 0
-#     for query_row in query_res:
-#         str_row = str(i + 1) + "\) "
-#         for column in query_row:
-#             data = "NULL" if query_row[column] == None else str(
-#                 query_row[column], "utf-8")
-#             data = await parse_msg(data, True, True)
-#             if not onlyData:
-#                 str_row = str_row + "*" + await parse_msg(column, True, True) + "*" + " : "
-#             str_row = str_row + data + " "
-#         str_res = str_res + str_row + "\n"
-#         i = i + 1
-#     if str_res == "":
-#         str_res = "EMPTY"
-#     db.close()
-#     return str_res
-
+    str_res = ""
+    i = 1
+    for query_row in query_res:
+        str_row = ""
+        if onlyData:
+            str_row = str(i) + "\) "
+        elif len(query_res) > 1:
+            str_row = f"Number *{i}*:\n"
+        for column in query_row:
+            data = "Empty" if query_row[column] == None else str(query_row[column], "utf-8")
+            data = await parse_msg(data, True, True)
+            column = await parse_msg(column, True, True)
+            column = "*" + column + "*"
+            if onlyData:
+                str_row = str_row + data + " "
+            else:
+                str_row = str_row + f"\t\t\t{column} \- {data}\n"
+        str_res = str_res + str_row + "\n"
+        i = i + 1
+    #print(str_res)
+    if str_res == "":
+        str_res = "*Empty*"
+        db.close()
+    return str_res, len(query_res)
+   
 
 async def get_column(query: str):
     db = _mysql.connect(host="localhost", user=usr,
@@ -307,9 +342,8 @@ async def save_img(message: types.Message):
         print(f"Image *{img_name_out}* saved succesfully\!")
         msg = f"Image *{img_name_out}* saved succesfully\!"
     else:
-        msg = "To save an image go to *Idea \- Modify Idea \- Manage images \- Add image*"    
-    print(msg)
-    await bot.send_message(message.from_user.id, msg , parse_mode='MarkdownV2')
+        msg = "To save an image go to *Idea \- Modify Idea \- Manage images \- Add image*"
+    await send_msg(message.from_user.id, msg)
 
 
 async def parse_msg(msg: str, force: bool = False, slash: bool = False):
@@ -620,7 +654,7 @@ async def echo(message: types.Message):
         print()
         await insert_data(queries)
     except Exception as e:
-        await bot.send_message(message.from_user.id, f"An error occured when handling your request!\n{str(e)}\nContact an adminitrator :)")
+        await send_msg(message.from_user.id, f"An error occured when handling your request\!\n{str(e)}\nContact an adminitrator :\)")
         
 
 if __name__ == '__main__':
