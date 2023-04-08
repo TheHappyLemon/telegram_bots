@@ -4,6 +4,7 @@ from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, executor, types
 from constants import *
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from prettytable import PrettyTable
 
 async def handle_sub_query(callback_query : types.CallbackQuery, query : str, onlyData = False):
     db = _mysql.connect(host="localhost", user=usr,
@@ -20,11 +21,8 @@ async def handle_sub_query(callback_query : types.CallbackQuery, query : str, on
             await handle_sub_query(callback_query, command, onlyData)
         elif command.startswith("SELECT"):
             # terminal 
-            print("SELECT sub block")
             answ = await get_data(command, onlyData)
-            print("\nresult:\n")
-            print(answ)
-            await bot.send_message(callback_query.from_user.id, answ, parse_mode='MarkdownV2')
+            await bot.send_message(callback_query.from_user.id, answ)
         else:
             await bot.send_message(callback_query.from_user.id, command, parse_mode='MarkdownV2')
 
@@ -105,6 +103,9 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                 await handle_sub_query(callback_query, command)
             elif command.startswith("SELECT"):
                 answ = await get_data(command, onlyData)
+                print("\nreceived:")
+                print(answ)
+                #await bot.send_message(callback_query.from_user.id, answ)
                 await bot.send_message(callback_query.from_user.id, answ, parse_mode='MarkdownV2')
             else:
                 # handle special commands with statuses
@@ -119,15 +120,12 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                 await bot.send_message(callback_query.from_user.id, command, parse_mode='MarkdownV2')
             else:
                 if command != None:
-                    print("kek 1")
                     # Reset last input on back button
                     command = await parse_command(callback_query, command, status_out)
                     queries = []
                     if command.startswith("UPDATE"):
-                        print("kek 2")
                         queries.append(command)
                         await insert_data(queries)
-                        print("kek 3")
                 keyboard = InlineKeyboardMarkup(row_width=2)
                 for row in results:
                     data = row['DATA'].decode('utf-8')
@@ -184,30 +182,50 @@ async def get_image(message: types.Message):
         # img = f.read()
     # await bot.send_photo(chat_id=message.from_user.id, photo=img)
 
-
 async def get_data(query: str, onlyData: bool = False):
     db = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)
-    str_res = ""
     db.query(query)
     query_res = db.store_result()
     query_res = query_res.fetch_row(maxrows=0, how=1)
-    i = 0
-    for query_row in query_res:
-        str_row = str(i + 1) + "\) "
-        for column in query_row:
-            data = "NULL" if query_row[column] == None else str(
-                query_row[column], "utf-8")
-            data = await parse_msg(data, True, True)
-            if not onlyData:
-                str_row = str_row + "*" + await parse_msg(column, True, True) + "*" + " : "
-            str_row = str_row + data + " "
-        str_res = str_res + str_row + "\n"
-        i = i + 1
-    if str_res == "":
-        str_res = "EMPTY"
-    db.close()
-    return str_res
+    table = PrettyTable()
+    result_dict = {}
+    # make a dict where key is every column from query and value is list of all values from all rows
+    for key in query_res[0].keys():
+        result_dict[key] = ["Empty" if d[key] == None else str(d[key], 'utf-8') for d in query_res]
+    # add each column with values to prettytable
+    for column in result_dict:
+        table.add_column(column, result_dict[column])
+    table.align = "l"
+    table_string = table.get_string()
+    # add code blocks, so telegram does not lose formatting.
+    table_string = "```\n" + table_string + "\n```"
+    return table_string
+
+
+# async def get_data(query: str, onlyData: bool = False):
+#     db = _mysql.connect(host="localhost", user=usr,
+#                         password=pswd, database=dbase)
+#     str_res = ""
+#     db.query(query)
+#     query_res = db.store_result()
+#     query_res = query_res.fetch_row(maxrows=0, how=1)
+#     i = 0
+#     for query_row in query_res:
+#         str_row = str(i + 1) + "\) "
+#         for column in query_row:
+#             data = "NULL" if query_row[column] == None else str(
+#                 query_row[column], "utf-8")
+#             data = await parse_msg(data, True, True)
+#             if not onlyData:
+#                 str_row = str_row + "*" + await parse_msg(column, True, True) + "*" + " : "
+#             str_row = str_row + data + " "
+#         str_res = str_res + str_row + "\n"
+#         i = i + 1
+#     if str_res == "":
+#         str_res = "EMPTY"
+#     db.close()
+#     return str_res
 
 
 async def get_column(query: str):
@@ -236,8 +254,8 @@ async def insert_data(queries: list):
 
 
 async def handle_user(tg_id: int, name: str):
-    answ = await get_data(f"SELECT * FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
-    if answ == "EMPTY":
+    answ = await get_column(f"SELECT tg_id FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
+    if len(answ) == 0:
         queries = []
         queries.append(
             f"INSERT INTO USERS (tg_id, name) VALUES ({tg_id}, '{name}');")
