@@ -35,7 +35,9 @@ async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, 
     else:
         msg_list.append(msg)
     for chunk in msg_list:
+        print(chunk)
         if not(chunk == "" or chunk == '\n'):
+            print("mrdown mode = ", mode)
             await bot.send_message(to, chunk, reply_markup=keyboard, parse_mode=mode)
     
 async def handle_sub_query(callback_query : types.CallbackQuery, query : str, onlyData = True):
@@ -74,6 +76,12 @@ async def parse_command(callback_query: types.CallbackQuery, command : str, stat
                 tmp = tmp[0]
             elif status_out[i] == 'rows_total':
                 tmp = str(rows)
+            elif status_out[i] == 'idea_filter':
+                tmp = await get_column(f"SELECT idea_filter FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
+                tmp = tmp[0]
+            elif status_out[i] == 'idea_mode':
+                tmp = await get_column(f"SELECT idea_mode FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
+                tmp = tmp[0]
             command = command.replace(param, tmp, 1)
             pos = command.find(param)
             i = i + 1
@@ -84,7 +92,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
         code = callback_query.data
         db = _mysql.connect(host="localhost", user=usr,
                             password=pswd, database=dbase)
-        await reset_status(str(callback_query.from_user.id))
+        await reset_status(str(callback_query.from_user.id), code)
         #await reset_last_input(code)
         print(code, "pressed")
         # Get label to write
@@ -128,6 +136,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
         if len(results) == 0:
             # if it is a Regular button
             command = await parse_command(callback_query, command, status_out)
+            print('\n normal command=\n',command)
             if command.startswith("SELECT IF"):
                 answ, row_total = await handle_sub_query(callback_query, command, onlyData)
             elif command.startswith("SELECT"):
@@ -140,6 +149,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
             if label != None:
                 label = await parse_command(callback_query, label, status_inp, row_total)
                 answ = label + '\n' + answ
+            print('\n normal command=\n',command)
             await send_msg(callback_query.from_user.id, answ)
         else:
             # button to another keyboard
@@ -163,7 +173,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                     keyboard.add(button)
                 await send_msg(callback_query.from_user.id, label, keyboard)
     except Exception as e:
-        await send_msg(callback_query.from_user.id, f"An error occured when handling your request\!\nError message: {str(e)}\n\nContact an adminitrator :\)")
+        await send_msg(callback_query.from_user.id, f"An error occured when handling your request!\nError message: {str(e)}\n\nContact an adminitrator :)", mode="")
             
 
 # Initial
@@ -242,7 +252,7 @@ async def get_data(query: str, onlyData: bool = True):
     for query_row in query_res:
         str_row = ""
         if onlyData:
-            str_row = str(i) + "\) "
+            str_row = f"*{str(i)}*\) "
         elif len(query_res) > 1:
             str_row = f"Number *{i}*:\n"
         for column in query_row:
@@ -297,18 +307,17 @@ async def handle_user(tg_id: int, name: str):
         await insert_data(queries)
 
 
-async def reset_status(tg_id: str):
+async def reset_status(tg_id: str, btn_name : str = ""):
     answ = await get_column(f"SELECT sts_chat FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
     if len(answ) == 0:
         print("NO STATUS")
     elif answ[0] != "IDLE":
+        if answ[0] == "ME_SRT" and btn_name == "my_4":
+            return
         queries = []
         queries.append(
             f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {tg_id};")
         await insert_data(queries)
-
-#async def reset_last_input(code : str):
-
 
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def save_img(message: types.Message):
@@ -423,6 +432,28 @@ async def echo(message: types.Message):
                 msg = f"Nice to meet you, *{name_out}*\!"
             else:
                 msg = f"Username, *{name_in}* is already taken\!\nTry something else."
+        elif answ[0] == "ME_MDE":
+            mode_in = message.text.strip().lower()
+            mode_out = await parse_msg(mode_in, force=True)
+            query_get = f"SELECT mode FROM IDEA_MODES WHERE LOWER(mode) = '{mode_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                msg = f"Mode *{mode_out}* does not exist\!"
+            else:
+                queries.append(f"UPDATE USERS SET idea_mode = '{answ[0]}' WHERE tg_id = {message.from_user.id};")   
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Mode *{mode_out}* is choosen\!" 
+        elif answ[0] == "ME_SRT":
+            sort_in = message.text.strip().lower()
+            sort_out = await parse_msg(sort_in, force=True)
+            query_get = f"SELECT sname FROM IDEA_FILTERS WHERE LOWER(fname) = '{sort_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                msg = f"Filter *{sort_out}* does not exist\!"
+            else:
+                queries.append(f"UPDATE USERS SET idea_filter = '{answ[0]}' WHERE tg_id = {message.from_user.id};")   
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Filter *{sort_out}* is choosen\!"   
         # MODIFY IDEA BUTTON STATUSES
         elif answ[0] == "MODI_NME":
             idea_new_name_in  = message.text.strip().lower()
@@ -488,13 +519,13 @@ async def echo(message: types.Message):
             user_name_out = await parse_msg(user_name_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
             idea_name_out = await parse_msg(idea_name, True)
-            query_get = f"SELECT id FROM USERS WHERE name = {user_name_in}"
-            idea_id   = await get_column(f"SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}'")
-            idea_id   = idea_id[0] 
+            query_get = f"SELECT tg_id FROM USERS WHERE name = '{user_name_in}'"
             answ_1 = await get_column(query_get)
             if len(answ_1) == 0:
                 msg = f"User named *{user_name_out}* does not exist"
             else:
+                idea_id   = await get_column(f"SELECT ID FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}'")
+                idea_id   = idea_id[0] 
                 query_get = f"SELECT user_id FROM IDEAS_INF WHERE idea_id = {idea_id} AND user_id = {answ_1[0]}"
                 answ_2 = await get_column(query_get)
                 if len(answ_2) == 0:
@@ -502,6 +533,7 @@ async def echo(message: types.Message):
                         f"INSERT INTO IDEAS_INF (user_id, idea_id) VALUES({answ_1[0]}, {idea_id})")
                     queries.append(
                         f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                    msg = f"User named *{user_name_out}* will not be able to see idea *{idea_name_out}*\!"
                 else:
                     msg = f"User named *{user_name_out}* is already restricted from idea *{idea_name_out}*\!"
         # FRIENDS BUTTON STATUSES
@@ -586,7 +618,7 @@ async def echo(message: types.Message):
                     elif answ[0] == "FRND_REJ":
                         queries.append(
                             f"UPDATE FR_REQUESTS SET sts = 5 WHERE (user_to = {message.from_user.id} AND user_from = {friend_id})")
-                        msg = f"Request *REJECTED*"\
+                        msg = f"Request *REJECTED*"
         # IDEA IMAGES BUTTON STATUSES
         elif answ[0] == "IMAG_SEE":
             img_name_in = message.text.strip()
@@ -614,7 +646,6 @@ async def echo(message: types.Message):
             if len(answ) == 0:
                 msg = f"Good\nNow provide the image\."
                 queries.append(f"UPDATE USERS set sts_chat = 'IMAG_IMG' WHERE tg_id = {message.from_user.id}")
-
                 queries.append(
                     f"UPDATE USERS SET img_name = '{img_name_in}' WHERE tg_id = {message.from_user.id};")
             else:
@@ -638,6 +669,22 @@ async def echo(message: types.Message):
         elif answ[0] == "IMAG_IMG":
             # actual save in function: 'save_img' 
             msg = f"That's not an image"
+        # OTHER USER IDEA STATUSES:
+        elif answ[0] == "USRI_SEE":
+            friend_name_in = message.text.strip()
+            friend_name_out = await parse_msg(message.text.strip(), force=True)
+            query_get = f"SELECT name FROM USERS WHERE name = '{friend_name_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                msg = f"User *{friend_name_out}* does not exist\!"
+            else:
+                # save name to last_input
+                queries.append(
+                    f"UPDATE USERS SET last_input = '{answ[0]}' WHERE tg_id = {message.from_user.id};")
+                queries.append(
+                    f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"User *{friend_name_out}* is choosen\!"        
+                keyboard = await get_keyboard(message=message, keyboardId=9)
         # DEFAULT STATUS HANDLER
         elif answ[0] == "IDLE":
             keyboard = await get_keyboard(message, keyboardId=0)
@@ -654,7 +701,7 @@ async def echo(message: types.Message):
         print()
         await insert_data(queries)
     except Exception as e:
-        await send_msg(message.from_user.id, f"An error occured when handling your request\!\n{str(e)}\nContact an adminitrator :\)")
+        await send_msg(message.from_user.id, f"An error occured when handling your request!\n{str(e)}\nContact an adminitrator :)", mode="")
         
 
 if __name__ == '__main__':
