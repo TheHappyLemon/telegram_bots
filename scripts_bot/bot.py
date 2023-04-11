@@ -124,9 +124,9 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
         print(f"\ncommand = {command}\n")
         # Get keyboard
         if code.startswith("back"):
-            q = f"""SELECT DATA, btn_name, isParent FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}')) ORDER BY ordr ASC;"""
+            q = f"""SELECT DATA, keyboardId, btn_name, isParent FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}')) ORDER BY ordr ASC;"""
         else:
-            q = f"SELECT DATA, btn_name, isParent FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}') ORDER BY ordr ASC"
+            q = f"SELECT DATA, keyboardId, btn_name, isParent FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}') ORDER BY ordr ASC"
         db.query(q)
         results = db.store_result()
         results = results.fetch_row(maxrows=0, how=1)
@@ -148,30 +148,33 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                 answ = command
             if label != None:
                 label = await parse_command(callback_query, label, status_inp, row_total)
+                label = await parse_msg(label, force=False, slash=True)
                 answ = label + '\n' + answ
             print('\n normal command=\n',command)
             await send_msg(callback_query.from_user.id, answ)
         else:
             # button to another keyboard
+            keyboard = InlineKeyboardMarkup(row_width=2)
             if status_inp != None:
                 queries.append(f"UPDATE USERS SET sts_chat = '{status_inp}' WHERE tg_id = {callback_query.from_user.id};")
-                await insert_data(queries)
-                await send_msg(callback_query.from_user.id, command)
+                msg = command
             else:
+                # save new keyboard to output it by /menu commnand
+                keyboardId = results[0]['keyboardId'].decode("utf-8") #keyboardId is same for all buttons
+                queries.append(f"UPDATE USERS SET last_keyboard = {keyboardId} WHERE tg_id = {callback_query.from_user.id};")
+                # Reset last input on back button
                 if command != None:
-                    # Reset last input on back button
                     command = await parse_command(callback_query, command, status_out)
-                    queries = []
                     if command.startswith("UPDATE"):
                         queries.append(command)
-                        await insert_data(queries)
-                keyboard = InlineKeyboardMarkup(row_width=2)
                 for row in results:
                     data = row['DATA'].decode('utf-8')
                     btn_name = row['btn_name'].decode('utf-8')
                     button = InlineKeyboardButton(text=data, callback_data=btn_name)
                     keyboard.add(button)
-                await send_msg(callback_query.from_user.id, label, keyboard)
+                msg = label
+            await insert_data(queries)
+            await send_msg(callback_query.from_user.id, msg, keyboard)
     except Exception as e:
         await send_msg(callback_query.from_user.id, f"An error occured when handling your request!\nError message: {str(e)}\n\nContact an adminitrator :)", mode="")
             
@@ -194,32 +197,29 @@ async def get_keyboard(message: types.Message, keyboardId : int = 0):
         btn_name = row['btn_name'].decode('utf-8')
         button = InlineKeyboardButton(text=data, callback_data=btn_name)
         keyboard.add(button)
+    db.query(f"UPDATE USERS SET last_keyboard = {keyboardId} WHERE tg_id = {message.from_user.id};")
+    db.commit()
+    db.close()
     return keyboard
 
-@dp.message_handler(commands=['get_image'])
-async def get_image(message: types.Message):
-    # This handler function listens for the /get_image command and
-    # expects an image ID to be provided in the format /get_image <image_id>.
+@dp.message_handler(commands=['menu'])
+async def get_menu(message: types.Message):
+    # This handler function listens for the /menu command
+    # and outputs last choosen menu
     await handle_user(message.from_user.id, message.from_user.username)
-    try:
-        image_id = int(message.text.split()[1])
-    except IndexError:
-        await message.answer("Please provide an image *ID*", parse_mode='MarkdownV2')
-        return
-    except ValueError:
-        await message.answer("Invalid image *ID*", parse_mode='MarkdownV2')
-        return
-    path = await get_column(f"SELECT img_path FROM IMAGES WHERE ID = {image_id}")
-    print(path)
-    if len(path) == 0:
-        await message.answer("Image *not found*", parse_mode='MarkdownV2')
-        return
-    async with aiofiles.open(path[0], 'rb') as f:
-        photo_bytes = await f.read()
-        await bot.send_photo(chat_id=message.from_user.id, photo=photo_bytes)
-    # with open(path[0], 'rb') as f:
-        # img = f.read()
-    # await bot.send_photo(chat_id=message.from_user.id, photo=img)
+    query_get_0 = f"SELECT last_keyboard FROM USERS WHERE tg_id = {message.from_user.id}"
+    answ_0 = await get_column(query_get_0)
+    query_get_1 = f"SELECT label FROM BUTTON_INF WHERE btn_id = (SELECT parentId FROM BUTTONS WHERE keyboardId = {answ_0[0]} LIMIT 1) LIMIT 1;"
+    print("q =",query_get_1)
+    answ_1 = await get_column(query_get_1)
+    if len(answ_1) == 0:
+        # Exception for default menu (parentId = NULL)
+        answ_1 = "Choose an option:"
+    else:
+        answ_1 = answ_1[0]
+    print(answ_1)
+    keyboard = await get_keyboard(message=message, keyboardId=answ_0[0])
+    await send_msg(message.from_user.id, answ_1, keyboard)
 
 # async def data_get(query: str, onlyData: bool = False):
 #     db = _mysql.connect(host="localhost", user=usr,
@@ -256,8 +256,12 @@ async def get_data(query: str, onlyData: bool = True):
         elif len(query_res) > 1:
             str_row = f"Number *{i}*:\n"
         for column in query_row:
-            data = "Empty" if query_row[column] == None else str(query_row[column], "utf-8")
+            data = empty_data if query_row[column] == None else str(query_row[column], "utf-8")
             data = await parse_msg(data, True, True)
+            print("column =",column)
+            if column.lower() == 'price' and data != empty_data:
+                print("aga")
+                data = data + " €"
             column = await parse_msg(column, True, True)
             column = "*" + column + "*"
             if onlyData:
@@ -406,19 +410,6 @@ async def echo(message: types.Message):
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Idea *{idea_name_out}* is choosen to be modified\!"        
                 keyboard = await get_keyboard(message=message, keyboardId=4)
-        elif answ[0] == "IDEA_DEL":
-            idea_name_out = await parse_msg(message.text.lower().strip(), force=True)
-            idea_name_in  = message.text.lower().strip()
-            query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{idea_name_in}' AND user_id  = {message.from_user.id} AND sts <> 9 LIMIT 1;"
-            answ = await get_column(query_get)
-            if (len(answ)) == 0:
-                msg = f"You do not have an idea named *{idea_name_out}*"
-            else:
-                queries.append(
-                    f"UPDATE IDEAS set sts = 9 WHERE LOWER(name) = '{idea_name_in}' AND user_id = {message.from_user.id} LIMIT 1;")
-                queries.append(
-                    f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-                msg = f"Idea *{idea_name_out}* deleted\!"
         # SETTINGS BUTTON STATUSES
         elif answ[0] == "ME_INP":
             name_out = await parse_msg(message.text.strip(), force=True)
@@ -480,7 +471,7 @@ async def echo(message: types.Message):
             msg = f"Done\!\nDescription of idea *{idea_name_out}* has been changed\!"
         elif answ[0] == "MODI_PRC":
             # TODO VALIDATE price
-            price_new_in  = message.text.strip().lower()
+            price_new_in  = message.text.strip().replace(',', '.').strip('.')
             price_new_out = await parse_msg(price_new_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
             idea_name_out = await parse_msg(idea_name, True)
@@ -495,10 +486,24 @@ async def echo(message: types.Message):
             idea_name = await get_custom_column(message.from_user.id)
             idea_name_out = await parse_msg(idea_name, True)
             queries.append(
-                f"UPDATE IDEAS set origin = '{origin_new_in}' WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
+                f"UPDATE IDEAS set source = '{origin_new_in}' WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
             queries.append(
                 f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-            msg = f"Done\!\nOrigin of idea *{idea_name_out}* is now *{origin_new_out}*\!"
+            msg = f"Done\!\Source of idea *{idea_name_out}* is now *{origin_new_out}*\!"
+        elif answ[0] == "MODI_DEL":
+            answ_in  = message.text.lower().strip()
+            answ_out = await parse_msg(answ_in, force=True)
+            if answ_in not in yes_no:
+                msg = f"What do you mean by *{answ_out}*?\nWrite *yes* or *no*"
+            else:
+                idea_name = await get_custom_column(message.from_user.id)
+                idea_name_out = await parse_msg(idea_name, force=True)
+                if yes_no[answ_in]:
+                    queries.append(f"UPDATE IDEAS set sts = 9 WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
+                    msg = f"Idea *{idea_name_out}* was deleted\!"
+                else:
+                    msg = f"Idea *{idea_name_out}* was *not* deleted\!"
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
         # SET PRIVACY BUTTON STATUSES
         elif answ[0] == "ACCS_CHG":
             acces_new_in  = message.text.strip().lower()
