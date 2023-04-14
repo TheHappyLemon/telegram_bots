@@ -7,7 +7,7 @@ from constants import *
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from prettytable import PrettyTable
 
-async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, mode : str = "MarkdownV2"):
+async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, mode : str = "MarkdownV2", disable_preview : bool = True):
     # maximum length of a telegram message is 4096 symbols. if msg is too big:
     # 1 - find last newline in given interval (from <i> to <i + max_len>)
     # 2 - create chunk from <i> to <\n pos>
@@ -38,7 +38,7 @@ async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, 
         print(chunk)
         if not(chunk == "" or chunk == '\n'):
             print("mrdown mode = ", mode)
-            await bot.send_message(to, chunk, reply_markup=keyboard, parse_mode=mode)
+            await bot.send_message(to, chunk, reply_markup=keyboard, parse_mode=mode, disable_web_page_preview=disable_preview)
     
 async def handle_sub_query(callback_query : types.CallbackQuery, query : str, onlyData = True):
     db = _mysql.connect(host="localhost", user=usr,
@@ -81,6 +81,9 @@ async def parse_command(callback_query: types.CallbackQuery, command : str, stat
                 tmp = tmp[0]
             elif status_out[i] == 'idea_mode':
                 tmp = await get_column(f"SELECT idea_mode FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
+                tmp = tmp[0]
+            elif status_out[i] == 'idea_sort':
+                tmp = await get_column(f"SELECT idea_sort FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
                 tmp = tmp[0]
             command = command.replace(param, tmp, 1)
             pos = command.find(param)
@@ -249,6 +252,7 @@ async def get_data(query: str, onlyData: bool = True):
     query_res = query_res.fetch_row(maxrows=0, how=1)
     str_res = ""
     i = 1
+    price_sign = '' # only for pricesign. very bad exception, but idk
     for query_row in query_res:
         str_row = ""
         if onlyData:
@@ -256,12 +260,15 @@ async def get_data(query: str, onlyData: bool = True):
         elif len(query_res) > 1:
             str_row = f"Number *{i}*:\n"
         for column in query_row:
+
             data = empty_data if query_row[column] == None else str(query_row[column], "utf-8")
+            if column == 'priceSign':
+                price_sign = data
+                continue
             data = await parse_msg(data, True, True)
             print("column =",column)
             if column.lower() == 'price' and data != empty_data:
-                print("aga")
-                data = data + " €"
+                data = data + ' ' + price_sign
             column = await parse_msg(column, True, True)
             column = "*" + column + "*"
             if onlyData:
@@ -389,10 +396,10 @@ async def echo(message: types.Message):
             query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{idea_name_in}' AND user_id = {message.from_user.id} AND sts <> 9 LIMIT 1;"
             answ = await get_column(query_get)
             if (len(answ)) == 0:
-                queries.append(
-                    f"INSERT INTO IDEAS (user_id, name) VALUES ({message.from_user.id}, '{idea_name_in}');")
-                queries.append(
-                    f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                crc_code = await get_column(f"SELECT currency FROM USERS WHERE tg_id = {message.from_user.id} LIMIT 1")
+                crc_code = crc_code[0]
+                queries.append(f"INSERT INTO IDEAS (user_id, name, currency) VALUES ({message.from_user.id}, '{idea_name_in}', '{crc_code}');")
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Idea *{idea_name_out}* created\!"
             else:
                 msg = f"You already have an idea named *{message.text}*\n\nChoose another *name*"
@@ -437,14 +444,36 @@ async def echo(message: types.Message):
         elif answ[0] == "ME_SRT":
             sort_in = message.text.strip().lower()
             sort_out = await parse_msg(sort_in, force=True)
-            query_get = f"SELECT sname FROM IDEA_FILTERS WHERE LOWER(fname) = '{sort_in}' LIMIT 1"
+            query_get = f"SELECT sname FROM IDEA_FILTERS WHERE LOWER(sname) = '{sort_in}' LIMIT 1"
             answ = await get_column(query_get)
             if len(answ) == 0:
                 msg = f"Filter *{sort_out}* does not exist\!"
             else:
                 queries.append(f"UPDATE USERS SET idea_filter = '{answ[0]}' WHERE tg_id = {message.from_user.id};")   
                 queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-                msg = f"Filter *{sort_out}* is choosen\!"   
+                msg = f"Filter *{sort_out}* is choosen\!"
+        elif answ[0] == "ME_ORD":
+            sort_in = message.text.strip().lower()
+            sort_out = await parse_msg(sort_in, force=True)
+            query_get = f"SELECT sname FROM IDEA_FILTERS WHERE LOWER(sname) = '{sort_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                msg = f"Order *{sort_out}* does not exist\!"
+            else:
+                queries.append(f"UPDATE USERS SET idea_sort = '{answ[0]}' WHERE tg_id = {message.from_user.id};")   
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Order *{sort_out}* is choosen\!"   
+        elif answ[0] == "ME_PRC":
+            crc_in = message.text.strip().lower()
+            crc_out = await parse_msg(crc_in, force=True)
+            query_get = f"SELECT code FROM CURRENCIES WHERE LOWER(code) = '{crc_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                msg = f"Bad input in *{crc_out}*\nOr currency *{crc_out}* is not supported\!"
+            else:
+                queries.append(f"UPDATE USERS SET currency = '{answ[0]}' WHERE tg_id = {message.from_user.id};")   
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Currency *{crc_out}* is choosen\!" 
         # MODIFY IDEA BUTTON STATUSES
         elif answ[0] == "MODI_NME":
             idea_new_name_in  = message.text.strip().lower()
@@ -465,7 +494,7 @@ async def echo(message: types.Message):
             idea_name = await get_custom_column(message.from_user.id)
             idea_name_out = await parse_msg(idea_name, True)
             queries.append(
-                    f"UPDATE IDEAS set descr = '{decr_new_in}' WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
+                    f"UPDATE IDEAS set description = '{decr_new_in}' WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
             queries.append(
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
             msg = f"Done\!\nDescription of idea *{idea_name_out}* has been changed\!"
@@ -473,13 +502,19 @@ async def echo(message: types.Message):
             # TODO VALIDATE price
             price_new_in  = message.text.strip().replace(',', '.').strip('.')
             price_new_out = await parse_msg(price_new_in, force=True)
-            idea_name = await get_custom_column(message.from_user.id)
-            idea_name_out = await parse_msg(idea_name, True)
-            queries.append(
-                f"UPDATE IDEAS set price = {price_new_in} WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
-            queries.append(
-                f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-            msg = f"Done\!\nPrice of idea *{idea_name_out}* is now *{price_new_out}*\!"
+            try:
+                price_new_in = round(float(price_new_in),2)
+                price_new_out = await parse_msg(str(price_new_in), force=True)
+                idea_name = await get_custom_column(message.from_user.id)
+                idea_name_out = await parse_msg(idea_name, True)
+                queries.append(
+                    f"UPDATE IDEAS set price = {price_new_in} WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
+                queries.append(
+                    f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Done\!\nPrice of idea *{idea_name_out}* is now *{price_new_out}*\!"
+            except ValueError:
+                msg = f"*Bad* input\!\nPrice should be a *number* without any special characters \(except '\.'\)"
+
         elif answ[0] == "MODI_ORI":
             origin_new_in  = message.text.strip().lower()
             origin_new_out = await parse_msg(origin_new_in, force=True)
@@ -513,10 +548,10 @@ async def echo(message: types.Message):
             idea_name_out = await parse_msg(idea_name, True)
             if acces_new_in in accs_options:
                 queries.append(
-                    f"UPDATE IDEAS SET isPublic = {accs_options[acces_new_in]} WHERE user_id = {message.from_user.id} AND name = '{idea_name}' LIMIT 1")
+                    f"UPDATE IDEAS SET access = {accs_options[acces_new_in]} WHERE user_id = {message.from_user.id} AND name = '{idea_name}' LIMIT 1")
                 queries.append(
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-                msg = f"Acces changed\!\nIdea *{idea_name_out}* is now *{acces_new_out}*"
+                msg = f"Access changed\!\nIdea *{idea_name_out}* is now *{acces_new_out}*"
             else:
                 msg = f"Bad input in *{acces_new_out}*"
         elif answ[0] == "ACCS_RMV":
