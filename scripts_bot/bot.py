@@ -5,7 +5,7 @@ from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, executor, types
 from constants import *
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from prettytable import PrettyTable
+from datetime import datetime
 
 async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, mode : str = "MarkdownV2", disable_preview : bool = True):
     # maximum length of a telegram message is 4096 symbols. if msg is too big:
@@ -43,9 +43,14 @@ async def send_msg(to : int, msg : str, keyboard : InlineKeyboardMarkup = None, 
 async def handle_sub_query(callback_query : types.CallbackQuery, query : str, onlyData = True):
     db = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)
+    print()
+    print(query)
     db.query(query)
     query_res = db.store_result()
     query_res = query_res.fetch_row(maxrows=0, how=1)
+    print('in sub query\n')
+    print('query res=')
+    print(query_res)
     for row in query_res:
         command = str(row['sub_query'], "utf-8")
         if command.startswith("SELECT IF"):
@@ -53,6 +58,7 @@ async def handle_sub_query(callback_query : types.CallbackQuery, query : str, on
         elif command.startswith("SELECT"):
             return await get_data(command, onlyData)
         else:
+            print('result of previous=\n',command)
             return command, len(query_res)
     return "Error. handle sub query returned empty set"
 
@@ -84,6 +90,9 @@ async def parse_command(callback_query: types.CallbackQuery, command : str, stat
                 tmp = tmp[0]
             elif status_out[i] == 'idea_sort':
                 tmp = await get_column(f"SELECT idea_sort FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
+                tmp = tmp[0]
+            elif status_out[i] == 'accs_lvl':
+                tmp = await get_column(f"SELECT accs_lvl FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
                 tmp = tmp[0]
             command = command.replace(param, tmp, 1)
             pos = command.find(param)
@@ -127,9 +136,9 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
         print(f"\ncommand = {command}\n")
         # Get keyboard
         if code.startswith("back"):
-            q = f"""SELECT DATA, keyboardId, btn_name, isParent FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}')) ORDER BY ordr ASC;"""
+            q = f"""SELECT DATA, keyboardId, btn_name, isParent, accs_lvl FROM BUTTONS WHERE keyboardId=(SELECT keyboardId FROM BUTTONS WHERE ID=(SELECT parentId FROM BUTTONS WHERE btn_name = '{code}')) ORDER BY ordr ASC;"""
         else:
-            q = f"SELECT DATA, keyboardId, btn_name, isParent FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}') ORDER BY ordr ASC"
+            q = f"SELECT DATA, keyboardId, btn_name, isParent, accs_lvl FROM BUTTONS WHERE parentId=(SELECT ID FROM BUTTONS WHERE btn_name='{code}') ORDER BY ordr ASC"
         db.query(q)
         results = db.store_result()
         results = results.fetch_row(maxrows=0, how=1)
@@ -150,9 +159,18 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                 await insert_data(queries)
                 answ = command
             if label != None:
-                label = await parse_command(callback_query, label, status_inp, row_total)
-                label = await parse_msg(label, force=False, slash=True)
-                answ = label + '\n' + answ
+                if label.startswith('SELECT IF'):
+                    print("working on specific label = ")
+                    # text with if clause
+                    label = await parse_command(callback_query, label, status_inp)
+                    print(label)
+                    answ_lab, row_total = await handle_sub_query(callback_query, label, onlyData)
+                    answ = answ_lab + '\n' + answ
+                else:
+                    # straight up text
+                    label = await parse_command(callback_query, label, status_inp, row_total)
+                    label = await parse_msg(label, force=False, slash=True)
+                    answ = label + '\n' + answ
             print('\n normal command=\n',command)
             await send_msg(callback_query.from_user.id, answ)
         else:
@@ -170,7 +188,15 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
                     command = await parse_command(callback_query, command, status_out)
                     if command.startswith("UPDATE"):
                         queries.append(command)
+                # TODO remove this part and call get_keyboard insted
+                query_get = f"SELECT accs_lvl FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1"
+                accs_usr = await get_column(query_get)
+                accs_usr = int(accs_usr[0])
                 for row in results:
+                    # skip button, if user has insueffiicient rights
+                    accs_lvl = int(row['accs_lvl'].decode('utf-8'))
+                    if accs_usr < accs_lvl:
+                        continue
                     data = row['DATA'].decode('utf-8')
                     btn_name = row['btn_name'].decode('utf-8')
                     button = InlineKeyboardButton(text=data, callback_data=btn_name)
@@ -179,7 +205,7 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
             await insert_data(queries)
             await send_msg(callback_query.from_user.id, msg, keyboard)
     except Exception as e:
-        await send_msg(callback_query.from_user.id, f"An error occured when handling your request!\nError message: {str(e)}\n\nContact an adminitrator :)", mode="")
+        await send_msg(callback_query.from_user.id, f"An error occured when handling your request!\nError message: {repr(e)}\n\nContact an adminitrator :)", mode="")
             
 
 # Initial
@@ -192,10 +218,16 @@ async def get_keyboard(message: types.Message, keyboardId : int = 0):
     await handle_user(message.from_user.id, message.from_user.username)
     db = _mysql.connect(host="localhost", user=usr,
                         password=pswd, database=dbase)
-    db.query(f"SELECT DATA, btn_name FROM BUTTONS WHERE keyboardId={keyboardId} ORDER BY ordr ASC")
+    db.query(f"SELECT DATA, btn_name, accs_lvl FROM BUTTONS WHERE keyboardId={keyboardId} ORDER BY ordr ASC")
     result = db.store_result()
     keyboard = InlineKeyboardMarkup(row_width=2)
+    query_get = f"SELECT accs_lvl FROM USERS WHERE tg_id = {message.from_user.id} LIMIT 1"
+    accs_usr = await get_column(query_get)
+    accs_usr = int(accs_usr[0])
     for row in result.fetch_row(maxrows=0, how=1):
+        accs_lvl = int(row['accs_lvl'].decode('utf-8'))
+        if accs_usr < accs_lvl:
+            continue        
         data = row['DATA'].decode('utf-8')
         btn_name = row['btn_name'].decode('utf-8')
         button = InlineKeyboardButton(text=data, callback_data=btn_name)
@@ -323,8 +355,13 @@ async def reset_status(tg_id: str, btn_name : str = ""):
     if len(answ) == 0:
         print("NO STATUS")
     elif answ[0] != "IDLE":
+        print
         if answ[0] == "ME_SRT" and btn_name == "my_4":
             return
+        if answ[0] == "ME_ORD" and btn_name == "my_8":
+            return
+        if answ[0] == "ME_PRC" and btn_name == "my_9":
+            return 
         queries = []
         queries.append(
             f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {tg_id};")
@@ -429,7 +466,7 @@ async def echo(message: types.Message):
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Nice to meet you, *{name_out}*\!"
             else:
-                msg = f"Username, *{name_in}* is already taken\!\nTry something else."
+                msg = f"Username, *{name_in}* is already taken\!\nTry something else\."
         elif answ[0] == "ME_MDE":
             mode_in = message.text.strip().lower()
             mode_out = await parse_msg(mode_in, force=True)
@@ -463,6 +500,19 @@ async def echo(message: types.Message):
                 queries.append(f"UPDATE USERS SET idea_sort = '{answ[0]}' WHERE tg_id = {message.from_user.id};")   
                 queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Order *{sort_out}* is choosen\!"   
+        elif answ[0] == "ADMN_INP":
+            data_in = message.text.strip().lower()
+            query_get = f"SELECT whn FROM FEEDBACK WHERE LOWER(data) = '{data_in}' AND user_id = {message.from_user.id} AND sts <> 9 LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                whn = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                queries.append(f"INSERT INTO FEEDBACK (data, user_id, whn) VALUES ('{data_in}', {message.from_user.id}, '{whn}')")   
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Your request has been recorded\!" 
+            else:
+                answ = await parse_msg(answ[0], True, True)
+                msg = f"You already gave literally the same feedback on *{answ}*"
+            
         elif answ[0] == "ME_PRC":
             crc_in = message.text.strip().lower()
             crc_out = await parse_msg(crc_in, force=True)
