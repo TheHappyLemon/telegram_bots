@@ -105,7 +105,6 @@ async def get_nested_keyboard(callback_query: types.CallbackQuery):
         db = _mysql.connect(host="localhost", user=usr,
                             password=pswd, database=dbase)
         await reset_status(str(callback_query.from_user.id), code)
-        #await reset_last_input(code)
         print(code, "pressed")
         # Get label to write
         q = f"""SELECT label, command, status_inp, status_out, onlyData FROM BUTTON_INF WHERE btn_id = (SELECT btn_inf FROM BUTTONS WHERE btn_name='{code}') LIMIT 1"""
@@ -585,6 +584,8 @@ async def echo(message: types.Message):
                 idea_name_out = await parse_msg(idea_name, force=True)
                 if yes_no[answ_in]:
                     queries.append(f"UPDATE IDEAS set sts = 9 WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
+                    queries.append(f"UPDATE USERS set last_input = NULL WHERE tg_id = {message.from_user.id}")
+                    keyboard = await get_keyboard(message, keyboardId=1)
                     msg = f"Idea *{idea_name_out}* was deleted\!"
                 else:
                     msg = f"Idea *{idea_name_out}* was *not* deleted\!"
