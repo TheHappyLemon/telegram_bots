@@ -437,6 +437,7 @@ async def echo(message: types.Message):
                 queries.append(f"INSERT INTO IDEAS (user_id, name, currency) VALUES ({message.from_user.id}, '{idea_name_in}', '{crc_code}');")
                 queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Idea *{idea_name_out}* created\!"
+                keyboard = await get_keyboard(message, keyboardId=4)
             else:
                 msg = f"You already have an idea named *{message.text}*\n\nChoose another *name*"
         elif answ[0] == "IDEA_MOD":
@@ -551,19 +552,17 @@ async def echo(message: types.Message):
             # TODO VALIDATE price
             price_new_in  = message.text.strip().replace(',', '.').strip('.')
             price_new_out = await parse_msg(price_new_in, force=True)
-            try:
-                price_new_in = round(float(price_new_in),2)
-                price_new_out = await parse_msg(str(price_new_in), force=True)
+            if not re.match(pattern, price_new_in):
+                msg = f"Price *{price_new_out}* has bad format\. Press *help* to see allowed format"
+            else:
                 idea_name = await get_custom_column(message.from_user.id)
                 idea_name_out = await parse_msg(idea_name, True)
                 queries.append(
-                    f"UPDATE IDEAS set price = {price_new_in} WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
+                    f"UPDATE IDEAS set price = '{price_new_in}' WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")
                 queries.append(
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Done\!\nPrice of idea *{idea_name_out}* is now *{price_new_out}*\!"
-            except ValueError:
-                msg = f"*Bad* input\!\nPrice should be a *number* without any special characters \(except '\.'\)"
-
+            
         elif answ[0] == "MODI_ORI":
             origin_new_in  = message.text.strip().lower()
             origin_new_out = await parse_msg(origin_new_in, force=True)
@@ -574,6 +573,19 @@ async def echo(message: types.Message):
             queries.append(
                 f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
             msg = f"Done\!\Source of idea *{idea_name_out}* is now *{origin_new_out}*\!"
+        elif answ[0] == "MODI_CUR":
+            crc_in = message.text.strip().lower()
+            crc_out = await parse_msg(crc_in, force=True)
+            idea_name = await get_custom_column(message.from_user.id)
+            idea_name_out = await parse_msg(idea_name, True)
+            query_get = f"SELECT code FROM CURRENCIES WHERE LOWER(code) = '{crc_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                msg = f"Bad input in *{crc_out}*\nOr currency *{crc_out}* is not supported\!"
+            else:
+                queries.append(f"UPDATE IDEAS set currency = '{crc_in}' WHERE LOWER(name) = '{idea_name}' AND user_id = {message.from_user.id} LIMIT 1;")   
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                msg = f"Currency *{crc_out}* is choosen for ideas *{idea_name_out}*\!" 
         elif answ[0] == "MODI_DEL":
             answ_in  = message.text.lower().strip()
             answ_out = await parse_msg(answ_in, force=True)
