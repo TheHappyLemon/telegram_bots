@@ -94,6 +94,9 @@ async def parse_command(callback_query: types.CallbackQuery, command : str, stat
             elif status_out[i] == 'accs_lvl':
                 tmp = await get_column(f"SELECT accs_lvl FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
                 tmp = tmp[0]
+            elif status_out[i] == 'last_idea':
+                tmp = await get_column(f"SELECT last_idea FROM USERS WHERE tg_id = {callback_query.from_user.id} LIMIT 1")
+                tmp = tmp[0]
             command = command.replace(param, tmp, 1)
             pos = command.find(param)
             i = i + 1
@@ -723,11 +726,16 @@ async def echo(message: types.Message):
                             f"UPDATE FR_REQUESTS SET sts = 5 WHERE (user_to = {message.from_user.id} AND user_from = {friend_id})")
                         msg = f"Request *REJECTED*"
         # IDEA IMAGES BUTTON STATUSES
-        elif answ[0] == "IMAG_SEE":
+        elif answ[0] == "IMAG_SEE" or answ[0] == "IMAG_SEE_1":
             img_name_in = message.text.strip()
             img_name_out = await parse_msg(img_name_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
-            query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
+            if answ[0] == "IMAG_SEE":
+                query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
+            else:
+                idea_name = await get_custom_column(message.from_user.id, 'last_idea')
+                usr_id = await get_column(f"SELECT tg_id FROM USERS WHERE name = (SELECT last_input FROM USERS WHERE tg_id = {message.from_user.id})")
+                query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {usr_id[0]} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
             answ = await get_column(query_get)
             if len(answ) == 0:
                 msg = f"Image named *{img_name_out}* not found\!"
@@ -788,6 +796,21 @@ async def echo(message: types.Message):
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"User *{friend_name_out}* is choosen\!"        
                 keyboard = await get_keyboard(message=message, keyboardId=9)
+        elif answ[0] == "OUSR_IDE":
+            idea_name_in  = message.text.lower().strip()
+            idea_name_out = await parse_msg(idea_name_in, force=True)
+            usr_id = await get_column(f"SELECT tg_id FROM USERS WHERE name = (SELECT last_input FROM USERS WHERE tg_id = {message.from_user.id})")
+            query_get = f"SELECT name FROM IDEAS WHERE LOWER(name) = '{idea_name_in}' AND user_id = {usr_id[0]} AND sts <> 9 LIMIT 1;"
+            answ = await get_column(query_get)
+            query_get = f"SELECT last_input FROM USERS WHERE tg_id = {message.from_user.id};"
+            usr_name = await get_column(query_get)
+            if (len(answ)) == 0:
+                msg = f"User *{usr_name}* does not have idea named *{idea_name_out}*\nTry again"
+            else:
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                queries.append(f"UPDATE USERS set last_idea = '{answ[0]}' WHERE tg_id = {message.from_user.id};")
+                msg = f"Idea *{idea_name_out}* is choosend\!"
+                keyboard = await get_keyboard(message=message, keyboardId=10)
         # DEFAULT STATUS HANDLER
         elif answ[0] == "IDLE":
             keyboard = await get_keyboard(message, keyboardId=0)
