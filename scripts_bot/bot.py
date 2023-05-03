@@ -347,7 +347,7 @@ async def handle_user(tg_id: int, name: str):
     answ = await get_column(f"SELECT tg_id FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
     if len(answ) == 0:
         if name == None:
-            name = answ[0] 
+            name = str(tg_id)
         queries = []
         queries.append(
             f"INSERT INTO USERS (tg_id, name) VALUES ({tg_id}, '{name}');")
