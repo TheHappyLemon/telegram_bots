@@ -247,9 +247,9 @@ async def get_menu(message: types.Message):
     query_get_0 = f"SELECT last_keyboard FROM USERS WHERE tg_id = {message.from_user.id}"
     answ_0 = await get_column(query_get_0)
     query_get_1 = f"SELECT label FROM BUTTON_INF WHERE btn_id = (SELECT parentId FROM BUTTONS WHERE keyboardId = {answ_0[0]} LIMIT 1) LIMIT 1;"
-    print("q =",query_get_1)
     answ_1 = await get_column(query_get_1)
-    if len(answ_1) == 0:
+    print(answ_1)
+    if len(answ_1) == 0 or answ_1[0] == "Empty":
         # Exception for default menu (parentId = NULL)
         answ_1 = "Choose an option:"
     else:
@@ -328,7 +328,12 @@ async def get_column(query: str):
     list_res = []
     for query_row in query_res:
         for column in query_row:
-            list_res.append(str(query_row[column], "utf-8"))
+            data = query_row[column]
+            if data == None:
+                data = "Empty"
+            else:
+                data = str(data, "utf-8")
+            list_res.append(data)
     db.close()
     return list_res
 
@@ -407,16 +412,20 @@ async def save_img(message: types.Message):
     await send_msg(message.from_user.id, msg)
 
 
-async def parse_msg(msg: str, force: bool = False, slash: bool = False):
-    if slash:
-        # escapes slash with a slash
-        msg = msg.replace('\\', '\\\\')
-    if force:
-        for char in Markdown2_ch_all:
+async def parse_msg(msg: str, force: bool = False, slash: bool = False, input : bool = False):
+    if input:
+        for char in ch_in:
             msg = msg.replace(char, '\\' + char)
     else:
-        for char in Markdown2_ch:
-            msg = msg.replace(char, '\\' + char)
+        if slash:
+            # escapes slash with a slash
+            msg = msg.replace('\\', '\\\\')
+        if force:
+            for char in Markdown2_ch_all:
+                msg = msg.replace(char, '\\' + char)
+        else:
+            for char in Markdown2_ch:
+                msg = msg.replace(char, '\\' + char)
     return msg
 
 
@@ -433,7 +442,7 @@ async def echo(message: types.Message):
         # IDEA BUTTON STATUSES
         if answ[0] == "IDEA_CRE":
             idea_name_out = await parse_msg(message.text.lower().strip(), force=True)
-            idea_name_in  = message.text.lower().strip()
+            idea_name_in  = await parse_msg(message.text.strip().lower(), input=True)
             query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{idea_name_in}' AND user_id = {message.from_user.id} AND sts <> 9 LIMIT 1;"
             answ = await get_column(query_get)
             if (len(answ)) == 0:
@@ -463,7 +472,7 @@ async def echo(message: types.Message):
         # SETTINGS BUTTON STATUSES
         elif answ[0] == "ME_INP":
             name_out = await parse_msg(message.text.strip(), force=True)
-            name_in = message.text.strip()
+            name_in = await parse_msg(message.text.strip(), input=True)
             answ = await get_column(f"SELECT tg_id FROM USERS WHERE name = '{name_in}'")
             if len(answ) == 0:
                 queries.append(
@@ -507,7 +516,7 @@ async def echo(message: types.Message):
                 queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Order *{sort_out}* is choosen\!"   
         elif answ[0] == "ADMN_INP":
-            data_in = message.text.strip().lower()
+            data_in = await parse_msg(message.text.strip().lower(), input=True)
             query_get = f"SELECT whn FROM FEEDBACK WHERE LOWER(data) = '{data_in}' AND user_id = {message.from_user.id} AND sts <> 9 LIMIT 1"
             answ = await get_column(query_get)
             if len(answ) == 0:
@@ -532,7 +541,7 @@ async def echo(message: types.Message):
                 msg = f"Currency *{crc_out}* is choosen\!" 
         # MODIFY IDEA BUTTON STATUSES
         elif answ[0] == "MODI_NME":
-            idea_new_name_in  = message.text.strip().lower()
+            idea_new_name_in  = await parse_msg(message.text.strip().lower(), input=True)
             idea_new_name_out = await parse_msg(idea_name_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
             query_get = f"SELECT id FROM IDEAS WHERE LOWER(name) = '{idea_new_name_in}' AND user_id  = {message.from_user.id} AND sts <> 9 LIMIT 1;"
@@ -546,7 +555,7 @@ async def echo(message: types.Message):
             else:
                 msg = f"You already have an idea named *{idea_new_name_out}*"
         elif answ[0] == "MODI_DES":
-            decr_new_in  = message.text.strip().lower()
+            decr_new_in  = await parse_msg(message.text.strip(), input=True)
             idea_name = await get_custom_column(message.from_user.id)
             idea_name_out = await parse_msg(idea_name, True)
             queries.append(
@@ -570,7 +579,7 @@ async def echo(message: types.Message):
                 msg = f"Done\!\nPrice of idea *{idea_name_out}* is now *{price_new_out}*\!"
             
         elif answ[0] == "MODI_ORI":
-            origin_new_in  = message.text.strip().lower()
+            origin_new_in  = await parse_msg(message.text.strip().lower(), input=True)
             origin_new_out = await parse_msg(origin_new_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
             idea_name_out = await parse_msg(idea_name, True)
@@ -750,7 +759,7 @@ async def echo(message: types.Message):
                     await bot.send_photo(chat_id=message.from_user.id, photo=photo_bytes)
                 msg = f"Image named *{img_name_out}*"
         elif answ[0] == "IMAG_ADD":
-            img_name_in = message.text.strip()
+            img_name_in = await parse_msg(message.text.strip(), input=True)
             img_name_out = await parse_msg(img_name_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
             query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
@@ -816,12 +825,14 @@ async def echo(message: types.Message):
                 keyboard = await get_keyboard(message=message, keyboardId=10)
         # DEFAULT STATUS HANDLER
         elif answ[0] == "IDLE":
-            keyboard = await get_keyboard(message, keyboardId=0)
-            msg = ("I'm not a chat bot:\(\nUse *buttons*, please:")
+            await get_menu(message=message)
+            msg = ""
+            #keyboard = await get_keyboard(message, keyboardId=0) #get_menu
+            #msg = ("I'm not a chat bot:\(\nUse *buttons*, please:")
         else:
             msg = await parse_msg("This function is currently *under construction*\nOur engineers are woorking *as hard as possible*, to get this thing going")
-        print('msg: ', msg)
-        await message.answer(msg, reply_markup=keyboard, parse_mode='MarkdownV2')
+        if msg > "":
+            await message.answer(msg, reply_markup=keyboard, parse_mode='MarkdownV2')
         i = 0
         print()
         for q in queries:
