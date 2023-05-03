@@ -346,6 +346,8 @@ async def insert_data(queries: list):
 async def handle_user(tg_id: int, name: str):
     answ = await get_column(f"SELECT tg_id FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
     if len(answ) == 0:
+        if name == None:
+            name = answ[0] 
         queries = []
         queries.append(
             f"INSERT INTO USERS (tg_id, name) VALUES ({tg_id}, '{name}');")
@@ -439,6 +441,7 @@ async def echo(message: types.Message):
                 crc_code = crc_code[0]
                 queries.append(f"INSERT INTO IDEAS (user_id, name, currency) VALUES ({message.from_user.id}, '{idea_name_in}', '{crc_code}');")
                 queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+                queries.append(f"UPDATE USERS SET last_input = '{idea_name_in}' WHERE tg_id = {message.from_user.id};")
                 msg = f"Idea *{idea_name_out}* created\!"
                 keyboard = await get_keyboard(message, keyboardId=4)
             else:
