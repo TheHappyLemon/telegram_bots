@@ -286,21 +286,26 @@ async def get_data(query: str, onlyData: bool = True):
     query_res = query_res.fetch_row(maxrows=0, how=1)
     str_res = ""
     i = 1
+    flg_img = False
     price_sign = '' # only for pricesign. very bad exception, but idk
     for query_row in query_res:
         str_row = ""
-        if onlyData:
+        if 'img_num' in query_row:
+            pass
+            # dont delete, so str withh img_num is empty at the beginning
+        elif onlyData:
             str_row = f"*{str(i)}*\) "
         elif len(query_res) > 1:
             str_row = f"Number *{i}*:\n"
         for column in query_row:
-
             data = empty_data if query_row[column] == None else str(query_row[column], "utf-8")
             if column == 'priceSign':
                 price_sign = data
                 continue
+            if column == 'img_num':
+                str_row = f"*{data}*\) " 
+                continue
             data = await parse_msg(data, True, True)
-            print("column =",column)
             if column.lower() == 'price' and data != empty_data:
                 data = data + ' ' + price_sign
             column = await parse_msg(column, True, True)
@@ -396,15 +401,18 @@ async def save_img(message: types.Message):
         await photo.download(destination_file=path)
         # At this point I just hope that photo was downloaded correctly, because
         # I dont know how to check it asynchronously
+        idea_name = await get_custom_column(message.from_user.id)
+        query_get = f"SELECT img_num FROM IMAGES WHERE idea_id = (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') ORDER BY img_num DESC LIMIT 1;"
+        answ = await get_column(query_get)
+        if len(answ) == 0:
+            answ = 1
+        else:
+            answ = int(answ[0]) + 1
         queries = []
-        queries.append(
-            f"INSERT INTO IMAGES (img_path, idea_id, name) VALUES ('{path}', {idea_id[0]}, '{img_name}');")
-        queries.append(
-            f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
-        queries.append(
-            f"UPDATE USERS SET img_name = NULL WHERE tg_id = {message.from_user.id};")
+        queries.append(f"INSERT INTO IMAGES (img_path, idea_id, name, img_num) VALUES ('{path}', {idea_id[0]}, '{img_name}', {answ});")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        queries.append(f"UPDATE USERS SET img_name = NULL WHERE tg_id = {message.from_user.id};")
         await insert_data(queries)
-        print(f"Image *{img_name_out}* saved succesfully\!")
         msg = f"Image *{img_name_out}* saved succesfully\!"
     else:
         msg = "To save an image go to *Idea \- Modify Idea \- Manage images \- Add image*"
@@ -741,15 +749,25 @@ async def echo(message: types.Message):
             img_name_in = message.text.strip()
             img_name_out = await parse_msg(img_name_in, force=True)
             idea_name = await get_custom_column(message.from_user.id)
+            query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id ="
             if answ[0] == "IMAG_SEE":
-                query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
+                query_get_2 = f"(SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"           
             else:
                 idea_name = await get_custom_column(message.from_user.id, 'last_idea')
                 usr_id = await get_column(f"SELECT tg_id FROM USERS WHERE name = (SELECT last_input FROM USERS WHERE tg_id = {message.from_user.id})")
-                query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {usr_id[0]} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
-            answ = await get_column(query_get)
-            if len(answ) == 0:
-                msg = f"Image named *{img_name_out}* not found\!"
+                query_get_2 = f"(SELECT id FROM IDEAS WHERE user_id = {usr_id[0]} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
+            answ = await get_column(query_get + query_get_2)
+            name_bad = len(answ) == 0
+            if name_bad:
+                try:
+                    int(img_name_in)
+                    query_get = f"SELECT img_path FROM IMAGES WHERE img_num = {img_name_in} AND idea_id =" + query_get_2
+                    answ = await get_column(query_get)
+                    name_bad = len(answ) == 0    
+                except ValueError:
+                    name_bad = True
+            if name_bad:
+                msg = f"Image named *{img_name_out}* not found\!"     
             else:
                 queries.append(
                     f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
@@ -763,13 +781,10 @@ async def echo(message: types.Message):
             idea_name = await get_custom_column(message.from_user.id)
             query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = (SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}') AND sts <> 9 LIMIT 1"
             answ = await get_column(query_get)
-            print(query_get)
-            print(answ)
             if len(answ) == 0:
                 msg = f"Good\nNow provide the image\."
                 queries.append(f"UPDATE USERS set sts_chat = 'IMAG_IMG' WHERE tg_id = {message.from_user.id}")
-                queries.append(
-                    f"UPDATE USERS SET img_name = '{img_name_in}' WHERE tg_id = {message.from_user.id};")
+                queries.append(f"UPDATE USERS SET img_name = '{img_name_in}' WHERE tg_id = {message.from_user.id};")
             else:
                 msg = f"You already have image named *{img_name_out}*"
         elif answ[0] == "IMAG_DEL":
@@ -781,7 +796,16 @@ async def echo(message: types.Message):
             idea_id   = idea_id[0] 
             query_get = f"SELECT ID FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = {idea_id} AND sts <> 9 LIMIT 1"
             answ = await get_column(query_get)
-            if len(answ) == 0:
+            name_bad = len(answ) == 0
+            if name_bad:
+                try:
+                    int(img_name_in)
+                    query_get = f"SELECT ID FROM IMAGES WHERE img_num = {img_name_in} AND idea_id = {idea_id} AND sts <> 9 LIMIT 1"
+                    answ = await get_column(query_get)
+                    name_bad = len(answ) == 0    
+                except ValueError:
+                    name_bad = True
+            if name_bad:
                 msg = f"Image named *{img_name_out}* not found\!"
             else:
                 queries.append(f"UPDATE IMAGES SET sts = 9 WHERE ID = {answ[0]} LIMIT 1")
