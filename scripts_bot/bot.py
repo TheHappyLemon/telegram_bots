@@ -391,7 +391,6 @@ async def save_img(message: types.Message):
             answ = "1"
         else:
             answ = str(int(answ[0]) + 1)
-        print("new id for image:", answ)
         photo = message.photo[-1]
         path = photos + answ + ext
         await photo.download(destination_file=path)
@@ -780,15 +779,14 @@ async def echo(message: types.Message):
             query_get = f"SELECT id FROM IDEAS WHERE user_id = {message.from_user.id} AND name = '{idea_name}'"
             idea_id   = await get_column(query_get)
             idea_id   = idea_id[0] 
-            query_get = f"SELECT img_path FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = {idea_id} AND sts <> 9 LIMIT 1"
+            query_get = f"SELECT ID FROM IMAGES WHERE name = '{img_name_in}' AND idea_id = {idea_id} AND sts <> 9 LIMIT 1"
             answ = await get_column(query_get)
             if len(answ) == 0:
                 msg = f"Image named *{img_name_out}* not found\!"
             else:
+                queries.append(f"UPDATE IMAGES SET sts = 9 WHERE ID = {answ[0]} LIMIT 1")
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
                 msg = f"Image named *{img_name_out}* deleted\!"
-                queries.append(f"UPDATE IDEAS set sts = 9 WHERE id = {idea_id} LIMIT 1")
-                queries.append(
-                    f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
         elif answ[0] == "IMAG_IMG":
             # actual save in function: 'save_img' 
             msg = f"That's not an image"
