@@ -851,6 +851,102 @@ async def echo(message: types.Message):
             queries.append(f"UPDATE USERS set last_idea = '{answ[0]}' WHERE tg_id = {message.from_user.id};")
             msg = f"Idea *{idea_name_out}* is choosend\!"
             keyboard = await get_keyboard(message=message, keyboardId=10)
+    # Films buttons handler
+    elif answ[0] == "MOVIE_ADD":
+        movie_name_in  = await parse_msg(message.text.strip().lower(), input=True)
+        movie_name_out = await parse_msg(movie_name_in, force=True)
+        query_get = f"SELECT name FROM FILMS WHERE LOWER(name) = '{movie_name_in}';"
+        answ = await get_column(query_get)
+        if (len(answ)) != 0:
+            msg = f"Database already contains movie called *{movie_name_in}*\nTry again"
+        else:
+            queries.append(f"INSERT INTO FILMS (name) VALUES ('{movie_name_in}')")
+            queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id}")
+            msg = f"Movie *{movie_name_out}* is added to the Database\!"
+    elif answ[0] == "MOVIE_MOD":
+        movie_name_in  = await parse_msg(message.text.strip().lower(), input=True)
+        movie_name_out = await parse_msg(movie_name_in, force=True)
+        query_get = f"SELECT name FROM FILMS WHERE LOWER(name) = '{movie_name_in}';"
+        answ = await get_column(query_get)
+        if (len(answ)) != 0:
+            queries.append(f"UPDATE USERS SET last_input = '{answ[0]}' WHERE tg_id = {message.from_user.id};")
+            queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+            msg = f"Movie *{movie_name_out}* is choosen to be modified\!"     
+            keyboard = await get_keyboard(message=message, keyboardId=12)
+        else:
+            msg = f"Movie called *{movie_name_in}* Not found\nTry again"
+    # MOVIE NAME MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_1":
+        movie_new_in  = await parse_msg(message.text.strip(), input=True)
+        movie_name = await get_custom_column(message.from_user.id)
+        queries.append(f"UPDATE FILMS set name = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        queries.append(f"UPDATE USERS SET last_input = '{movie_new_in}' WHERE tg_id = {message.from_user.id};")
+        msg = f"Done\!\nName has been changed\!"
+    # MOVIE CATEGORY MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_2":
+        movie_new_in  = await parse_msg(message.text.strip().lower(), input=True)
+        movie_name = await get_custom_column(message.from_user.id)
+        queries.append(f"UPDATE FILMS set category = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        msg = f"Done\!\nCategory has been changed\!"
+    # MOVIE LENGTH MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_3":
+        movie_new_in  = await parse_msg(message.text.strip(), input=True)
+        movie_name = await get_custom_column(message.from_user.id)
+        queries.append(f"UPDATE FILMS set length = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        msg = f"Done\!\nLength has been changed\!"
+    # MOVIE LINK MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_4":
+        movie_new_in  = await parse_msg(message.text.strip(), input=True)
+        movie_name = await get_custom_column(message.from_user.id)
+        queries.append(f"UPDATE FILMS set link = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        msg = f"Done\!\nSource has been changed\!"
+    # MOVIE NOTES (rewrite) MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_5":
+        movie_new_in  = await parse_msg(message.text.strip(), input=True)
+        movie_name = await get_custom_column(message.from_user.id)
+        queries.append(f"UPDATE FILMS set user_notes = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        msg = f"Done\!\nNote has been changed\!"
+    # MOVIE NOTES (append) MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_6":
+        movie_new_in  = await parse_msg(message.text.strip(), input=True)
+        movie_name = await get_custom_column(message.from_user.id)
+        query_get = f"SELECT user_notes FROM FILMS WHERE name = '{movie_name}'"
+        answ = await get_column(query_get)
+        if answ[0] == "Empty":
+            answ[0] = ""
+        movie_new_in = answ[0] + " " + movie_new_in
+        queries.append(f"UPDATE FILMS set user_notes = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+        queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        msg = f"Done\!\nNote has been appended\!"
+    # MOVIE NOTES (rewrite) MODIFYER STATUS HANDLER
+    elif answ[0] == "MOVIE_RAND":
+        movie_new_in = message.text.strip().lower()
+        if movie_new_in == "no":
+            # random movie from all movies
+            command = f"SELECT name AS Name, category AS Category, length AS Length, link AS Source, user_notes AS Notes FROM FILMS ORDER BY RAND() LIMIT 1"
+            msg, row_total = await get_data(command, False)
+            msg = f"Here is your *random* movie\!\n" + msg
+            queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+        else:
+            # random movie from given category
+            query_get = ""
+            movie_new_in  = await parse_msg(movie_new_in, input=True)
+            movie_name_out = await parse_msg(movie_new_in, force=True)
+            query_get = f"SELECT category FROM FILMS WHERE LOWER(category) = '{movie_new_in}' LIMIT 1"
+            answ = await get_column(query_get)
+            if len(answ) == 0:
+                command = ""
+                msg = f"Category *{movie_name_out}* not found in a Database\!\nTry again"
+            else:
+                command = f"SELECT name AS Name, category AS Category, length AS Length, link AS Source, user_notes AS Notes FROM FILMS WHERE LOWER(category) = '{movie_new_in}' ORDER BY RAND() LIMIT 1"
+                msg, row_total = await get_data(command, False)
+                msg = f"Here is your *random* movie from *{movie_name_out}* category\!\n" + msg
+                queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
     # DEFAULT STATUS HANDLER
     elif answ[0] == "IDLE":
         await get_menu(message=message)

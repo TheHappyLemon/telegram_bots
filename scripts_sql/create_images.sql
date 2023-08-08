@@ -1,0 +1,13 @@
+CREATE TABLE IMAGES (
+    ID INT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    img_path VARCHAR(255) NOT NULL,
+    idea_id INT NOT NULL,
+    sts INT NOT NULL DEFAULT 0,
+    PRIMARY KEY(ID),
+    FOREIGN KEY (idea_id) REFERENCES IDEAS(id) ON DELETE CASCADE
+);
+
+-- sts:
+-- 0 - new
+-- 9 - deleted

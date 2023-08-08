@@ -1,0 +1,16 @@
+INSERT INTO DAYS (day, descr, period, period_am)
+VALUES ('2024-01-09', 'Roma birthday', 'year', 1),
+       ('2024-02-02', 'Matiss birthday', 'year', 1),
+       ('2024-02-25', 'Vadim birthday', 'year', 1),
+       ('2024-03-17', 'Babushka P. birthday', 'year', 1),
+       ('2024-04-22', 'Sonechka birthday', 'year', 1),
+       ('2023-07-16', 'Andrej Kuch. birthday', 'year', 1),
+       ('2023-08-02', 'Dedushka P', 'year', 1),
+       ('2023-08-16', 'Sveta birthday', 'year', 1),
+       ('2023-09-08', 'Kostya birthday', 'year', 1),
+       ('2023-09-13', 'Matiss birthday', 'year', 1),
+       ('2023-09-18', 'Maks Gol. birthday', 'year', 1),
+       ('2023-10-02', 'Kirill birthday', 'year', 1),
+       ('2023-10-17', 'Matiss birthday', 'year', 1),
+       ('2023-10-21', 'Leha Kuch. birthday', 'year', 1),
+       ('2023-12-17', 'Papa birthday', 'year', 1)

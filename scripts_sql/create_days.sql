@@ -1,0 +1,7 @@
+CREATE TABLE DAYS (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  day DATE NOT NULL,
+  descr VARCHAR(128),
+  period VARCHAR(15),
+  period_am INT
+);
