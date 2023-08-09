@@ -923,12 +923,24 @@ async def echo(message: types.Message):
         queries.append(f"UPDATE FILMS set user_notes = '{movie_new_in}' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
         queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
         msg = f"Done\!\nNote has been appended\!"
+    # SEEN MOVIE STATUS HANDLER
+    elif answ[0] == "MOVIE_CHG_7":
+        movie_new_in = message.text.strip().lower()
+        movie_name = await get_custom_column(message.from_user.id) 
+        if movie_new_in == "yes":
+            queries.append(f"UPDATE FILMS SET seen = 'Yes' WHERE LOWER(name) = '{movie_name}' LIMIT 1;")
+            queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
+            msg = f"Done\!\nMovie *{movie_name}* has been flagged as 'seen'\. If it was mistake, contact an administrator :\)\!"
+        elif movie_new_in == "no":
+            msg = f"Okay\!\nMovie *{movie_name}* status not changed\!"
+        else:
+            msg = f"Please, type '*yes*' or '*no*' only\!" 
     # MOVIE NOTES (rewrite) MODIFYER STATUS HANDLER
     elif answ[0] == "MOVIE_RAND":
         movie_new_in = message.text.strip().lower()
         if movie_new_in == "no":
-            # random movie from all movies
-            command = f"SELECT name AS Name, category AS Category, length AS Length, link AS Source, user_notes AS Notes FROM FILMS ORDER BY RAND() LIMIT 1"
+            # random movie from all unseen movies
+            command = f"SELECT name AS Name, category AS Category, length AS Length, link AS Source, user_notes AS Notes, seen AS Seen FROM FILMS WHERE seen = 'Nope' ORDER BY RAND() LIMIT 1"
             msg, row_total = await get_data(command, False)
             msg = f"Here is your *random* movie\!\n" + msg
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")
@@ -943,7 +955,7 @@ async def echo(message: types.Message):
                 command = ""
                 msg = f"Category *{movie_name_out}* not found in a Database\!\nTry again"
             else:
-                command = f"SELECT name AS Name, category AS Category, length AS Length, link AS Source, user_notes AS Notes FROM FILMS WHERE LOWER(category) = '{movie_new_in}' ORDER BY RAND() LIMIT 1"
+                command = f"SELECT name AS Name, category AS Category, length AS Length, link AS Source, user_notes AS Notes, seen AS Seen FROM FILMS WHERE LOWER(category) = '{movie_new_in}' AND seen <> 'Nope' ORDER BY RAND() LIMIT 1"
                 msg, row_total = await get_data(command, False)
                 msg = f"Here is your *random* movie from *{movie_name_out}* category\!\n" + msg
                 queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {message.from_user.id};")

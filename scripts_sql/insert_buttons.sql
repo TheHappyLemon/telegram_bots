@@ -5,6 +5,8 @@ INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentI
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (4,  0, 'Help'         	   , 'main_4', 0, 0, NULL, 4, 5);
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (37, 0, 'Friends'     	   , 'main_5', 0, 1, NULL, 37, 3);
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (60, 0, 'User Ideas'   	   , 'main_6', 0, 1, NULL, 60, 2);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (80, 9, 'Films', 'main_7', 0, 1, NULL, 80, 7);
+
 -- Modify button buttons accs_lvl,                                       	                                  0,                  
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (5 , 0, 'List Ideas'  	   , 'idea_1', 1, 0, 1, 5 , 1);
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (6 , 0, 'Create Idea' 	   , 'idea_2', 1, 0, 1, 6 , 2);
@@ -86,3 +88,19 @@ INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentI
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (77, 0, 'See image'  , 'usr_img_2', 10, 0, 75, 77, 2);
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (78, 0, 'Help'       , 'usr_img_3', 10, 0, 75, 78, 3);
 INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (79, 0, 'Back'   	  , 'back_10'  , 10, 0, 75, 79, 4);
+-- Films buttons
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (81, 0, 'List all movies', 'movie_1', 11, 0, 80, 81, 1);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (82, 0, 'Pick random', 'movie_2', 11, 0, 80, 82, 2);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (83, 0, 'Add movie', 'movie_3', 11, 0, 80, 83, 3);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (84, 0, 'Modify movie', 'movie_4', 11, 1, 80, 84, 4);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (85, 0, 'Back', 'back_11', 11, 0, 80, 85, 5);
+-- Modify Movie buttons
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (93, 0, 'Print moive', 'movie_chg_1', 12, 0, 84, 93, 1);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (86, 0, 'Modify name', 'movie_chg_2', 12, 0, 84, 86, 2);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (87, 0, 'Modify category', 'movie_chg_3', 12, 0, 84, 87, 3);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (88, 0, 'Modify length', 'movie_chg_4', 12, 0, 84, 88, 4);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (89, 0, 'Modify source', 'movie_chg_5', 12, 0, 84, 89, 5);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (90, 0, 'Change note', 'movie_chg_6', 12, 0, 84, 90, 6);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (91, 0, 'Edit note', 'movie_chg_7', 12, 0, 84, 91, 7);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (94, 0, 'Seen', 'movie_chg_8', 12, 0, 84, 94, 8);
+INSERT INTO BUTTONS (ID, accs_lvl, DATA, btn_name, keyboardId, isParent, parentId, btn_inf, ordr) VALUES (92, 0, 'Back', 'back_12', 12, 0, 84, 92, 9);
