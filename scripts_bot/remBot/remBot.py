@@ -27,7 +27,10 @@ async def get_query(query: str):
     list_res = []
     for query_row in query_res:
         for column in query_row:
-            query_row[column] = str(query_row[column], "utf-8")
+            try:
+                query_row[column] = str(query_row[column], "utf-8")
+            except TypeError:
+                query_row[column] = None
         list_res.append(query_row)
     db.close()
     return list_res
@@ -46,6 +49,10 @@ async def get_today():
     return date.today()
     
 async def reschedule(day : dict) -> None:
+    if day["period"] == None or int(day["period_am"]) == None:
+        # if these fields are not provided event does not need to be rescheduled
+        await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
+        return
     vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
     period = day["period"]
     amount = int(day["period_am"])
@@ -66,7 +73,7 @@ async def reschedule(day : dict) -> None:
     await insert_data(querris)
 
 async def check_day(day : dict) -> bool:
-    # actually i also need to  adjust timezones
+    # actually i also need to adjust timezones
     # but i dont care
     # return "" if no need to remind or string with reminder itself
     date = datetime.strptime(day['day'], "%Y-%m-%d").date()
