@@ -2,6 +2,7 @@
 #*.sql
 # decided to track sql files, because i dont want to lose them and this db is not needed to anyone so.. idc lol 
 # sys
+scripts_bot/jobs.txt
 .bash_history
 .bash_logout
 .bashrc

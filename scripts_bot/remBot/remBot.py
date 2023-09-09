@@ -20,6 +20,18 @@ async def get_menu(message: types.Message):
         msg = msg + row + "\n\n"
     await send_msg(to=message.from_user.id, msg=msg)
 
+@dp.message_handler(commands=['jobs'])
+async def get_menu(message: types.Message):
+    if not await check_usr(message.from_user.id, message):
+        return    
+    f = open('jobs.txt', 'w')
+    scheduler.print_jobs(out = f)
+    f.flush()
+    f.close()
+    f = open('jobs.txt', 'r')
+    text = f.read()
+    await send_msg(to=message.from_user.id, msg=text)
+
 
 @dp.message_handler(commands=['add'])
 async def add_event(message: types.Message):
@@ -114,8 +126,8 @@ async def remind(bot : Bot, reschedule : bool):
             await bot.send_message(chat, answ)    
 
 async def on_startup(dp : Dispatcher):
-    scheduler.add_job(remind, 'cron', hour='8', minute='00', args=(bot, False,))
-    scheduler.add_job(remind, 'cron', hour='18', minute='00', args=(bot, True,))
+    scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
+    scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
 
 if __name__ == '__main__':
     scheduler.start()
