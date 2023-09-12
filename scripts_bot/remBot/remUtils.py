@@ -138,6 +138,32 @@ async def check_day(day : dict, reschedule : bool) -> str:
         return f"Attention!\n\nToday is {day['descr']}"
     else:
         return ""
-    
+
+def find_day_in_month(year, month, day_of_week, occurrence):
+    # day_of_week = [0, 1, 2, 3, 4, 5, 6]
+    # occurence [1, 2, 3, 4, 5]
+    # check input parameters
+    print(f"trying to found {occurrence} {day_of_week} in month {month} in year {year}")
+    if day_of_week not in days_of_week:
+        return None
+    if occurrence > 5 or occurrence < 1:
+        return None
+    day = 1
+    weekday = date(year, month, day).weekday()
+    print("weekday = ",weekday)
+    # calculate first day_of_week in a month
+    while weekday != day_of_week:
+        day = day + 1
+        print(f"day = {day}")
+        weekday = date(year, month, day).weekday()
+    # find day_of_week number <occurence>
+    # occurence - 1, because we are already on the first week
+    day = day + (7 * (occurrence - 1))
+    try:
+        res_date = date(year, month, day)
+    except ValueError:
+        return None
+    return res_date.strftime('%Y-%m-%d')
+
 def replace_spaces(match):
     return match.group(0).replace(' ', delim)
