@@ -194,8 +194,11 @@ async def calculate_yearly(bot : Bot):
 async def remind(bot : Bot, reschedule : bool):
     days = await get_query("SELECT * FROM DAYS ORDER BY day")
     msg = ""
+    today = await get_today()
+    tomorrow = today + timedelta(days=1)
+    week = today + timedelta(days=7)    
     for day in days:
-        answ = await check_day(day, reschedule)
+        answ = await check_day(day, reschedule, today, tomorrow, week)
         if answ > "":
             msg = msg + answ + '\n\n'
     if msg > "":
@@ -203,9 +206,9 @@ async def remind(bot : Bot, reschedule : bool):
         await bot.send_message(chat, msg)    
 
 async def on_startup(dp : Dispatcher):
-    #scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
-    #scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
-    scheduler.add_job(remind, 'cron', second = '3', args=(bot, False,))
+    scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
+    scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
+    #scheduler.add_job(remind, 'cron', second = '*', args=(bot, False,)) - test
     scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
 
 if __name__ == '__main__':

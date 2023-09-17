@@ -120,14 +120,11 @@ async def reschedule(day : dict) -> None:
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
 
-async def check_day(day : dict, reschedule : bool) -> str:
+async def check_day(day : dict, reschedule : bool, today : date, tomorrow : date, week : date) -> str:
     # actually i also need to adjust timezones
     # but i dont care
     # return "" if no need to remind or string with reminder itself
     date = datetime.strptime(day['day'], "%Y-%m-%d").date()
-    today = await get_today()
-    tomorrow = today + timedelta(days=1)
-    week = today + timedelta(days=7)
     if date == tomorrow:
         return f"Tomorrow is {day['descr']}"
     elif date == week:
