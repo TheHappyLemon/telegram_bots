@@ -68,13 +68,12 @@ async def add_event(message: types.Message):
             await send_msg(to=message.from_user.id, msg=f"Period amount should be an integer.")
             return
     args[1] = args[1].replace(delim, ' ')
-    if args[0] == "?":
-        # for weekday calculation
-        args[0] = "NULL"
     query = "INSERT INTO DAYS (day, descr"
-    if len(args) == 2 or args[0] == "NULL":
-        if args[0] != "NULL":
+    if len(args) == 2 or args[0] == "?":
+        if args[0] != "?":
             args[0] = "'" + args[0] + "'"
+        else:
+            args[0] = "NULL"
         query = f"INSERT INTO DAYS (day, descr) VALUES({args[0]}, '{args[1]}')"
     else:
         query = f"INSERT INTO DAYS (day, descr, period, period_am) VALUES('{args[0]}', '{args[1]}', '{args[2]}', '{args[3]}')"
@@ -84,7 +83,7 @@ async def add_event(message: types.Message):
     await send_msg(to=message.from_user.id, msg=f"Done! Event was scheduled.")
 
 @dp.message_handler(commands=['add_weekday'])
-async def add_event(message: types.Message):
+async def add_weekday(message: types.Message):
     if not await check_usr(message.from_user.id, message):
         return
     args = message.get_args().split()
@@ -131,29 +130,14 @@ async def add_event(message: types.Message):
     await send_msg(to=message.from_user.id, msg=f"Succes! Information about event with id {args[0]} is updated")
 
 @dp.message_handler(commands=['calculate'])
-async def add_event(message: types.Message):
+async def calculate_command(message: types.Message):
     if not await check_usr(message.from_user.id, message):
-        return    
-    days = await get_query("SELECT * FROM DAYS WHERE format <> 0")
-    response = ""
-    for day in days:
-        print(day)
-        row = "* Event " + f"{day['descr']} "
-        if day['format'] == '1':
-            format = await get_query(f"SELECT * FROM WEEKDAY_prm WHERE day_id = {day['id']}")
-            format = format[0]
-            v_date = find_day_in_month(datetime.now().year, int(format['month']), int(format['weekday']), int(format['occurence']))
-            queris = []
-            queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
-            await insert_data(queris)
-            row = row + f" is scheduled on {v_date}\n\n"
-            response = response + row
+        return 
+    response = await calculate_events()
     await send_msg(to=message.from_user.id, msg=response)
     
-
-
 @dp.message_handler(commands=['delete'])
-async def add_event(message: types.Message):
+async def deletea_event(message: types.Message):
     if not await check_usr(message.from_user.id, message):
         return    
     args = message.get_args().split()
@@ -172,7 +156,7 @@ async def add_event(message: types.Message):
     await send_msg(to=message.from_user.id, msg=f"Done! Event was deleted from database.")
 
 @dp.message_handler(commands=['help'])
-async def add_event(message: types.Message):
+async def help_event(message: types.Message):
     if not await check_usr(message.from_user.id, message):
         return
     msg = "I can answer to following 4 commands:"
@@ -202,18 +186,28 @@ async def handle_check_command(message: types.Message):
         return
     await message.reply("Alive!" + " " + str(message.from_user.id))
 
+async def calculate_yearly(bot : Bot):
+    response = await calculate_events()
+    response = "This is result from yearly event calculation!:\n\n" + response
+    await send_msg(to=chat, msg=response)
+
 async def remind(bot : Bot, reschedule : bool):
     days = await get_query("SELECT * FROM DAYS ORDER BY day")
+    msg = ""
     for day in days:
         answ = await check_day(day, reschedule)
         if answ > "":
-            await bot.send_message(chat, answ)    
+            msg = msg + answ + '\n\n'
+    if msg > "":
+        msg = "Attention:\n\n" + msg
+        await bot.send_message(chat, msg)    
 
 async def on_startup(dp : Dispatcher):
-    scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
-    scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
+    #scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
+    #scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
+    scheduler.add_job(remind, 'cron', second = '3', args=(bot, False,))
+    scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
 
 if __name__ == '__main__':
     scheduler.start()
-    # print(find_day_in_month(2023, 9, 4, 5))
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)

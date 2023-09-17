@@ -129,32 +129,44 @@ async def check_day(day : dict, reschedule : bool) -> str:
     tomorrow = today + timedelta(days=1)
     week = today + timedelta(days=7)
     if date == tomorrow:
-        return f"Attention!\n\nTomorrow is {day['descr']}"
+        return f"Tomorrow is {day['descr']}"
     elif date == week:
-        return f"Attention!\n\nIn 7 days there is {day['descr']}"
+        return f"In 7 days there is {day['descr']}"
     elif date == today:
         if reschedule:
             await reschedule(day)
-        return f"Attention!\n\nToday is {day['descr']}"
-    else:
-        return ""
+        return f"Today is {day['descr']}"
+    return ""
+
+async def calculate_events():
+    days = await get_query("SELECT * FROM DAYS WHERE format <> 0")
+    response = ""
+    queris = []
+    for day in days:
+        row = "* Event " + f"{day['descr']} "
+        if day['format'] == '1':
+            format = await get_query(f"SELECT * FROM WEEKDAY_prm WHERE day_id = {day['id']}")
+            format = format[0]
+            v_date = find_day_in_month(datetime.now().year, int(format['month']), int(format['weekday']), int(format['occurence']))
+            queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
+            row = row + f" is scheduled on {v_date}\n\n"
+            response = response + row
+    await insert_data(queris)
+    return response
 
 def find_day_in_month(year, month, day_of_week, occurrence):
     # day_of_week = [0, 1, 2, 3, 4, 5, 6]
     # occurence [1, 2, 3, 4, 5]
     # check input parameters
-    print(f"trying to found {occurrence} {day_of_week} in month {month} in year {year}")
     if day_of_week not in days_of_week:
         return None
     if occurrence > 5 or occurrence < 1:
         return None
     day = 1
     weekday = date(year, month, day).weekday()
-    print("weekday = ",weekday)
     # calculate first day_of_week in a month
     while weekday != day_of_week:
         day = day + 1
-        print(f"day = {day}")
         weekday = date(year, month, day).weekday()
     # find day_of_week number <occurence>
     # occurence - 1, because we are already on the first week
