@@ -120,7 +120,7 @@ async def reschedule(day : dict) -> None:
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
 
-async def check_day(day : dict, reschedule : bool, today : date, tomorrow : date, week : date) -> str:
+async def check_day(day : dict, to_reschedule : bool, today : date, tomorrow : date, week : date) -> str:
     # actually i also need to adjust timezones
     # but i dont care
     # return "" if no need to remind or string with reminder itself
@@ -130,25 +130,44 @@ async def check_day(day : dict, reschedule : bool, today : date, tomorrow : date
     elif date == week:
         return f"In 7 days there is {day['descr']}"
     elif date == today:
-        if reschedule:
+        if to_reschedule:
             await reschedule(day)
         return f"Today is {day['descr']}"
     return ""
 
-async def calculate_events():
-    days = await get_query("SELECT * FROM DAYS WHERE format <> 0")
+async def calculate_events(formats : list, ids : list = []):
+    # 0 - regular events
+    # 1 - irregular events
     response = ""
     queris = []
-    for day in days:
-        row = "* Event " + f"{day['descr']} "
-        if day['format'] == '1':
-            format = await get_query(f"SELECT * FROM WEEKDAY_prm WHERE day_id = {day['id']}")
-            format = format[0]
-            v_date = find_day_in_month(datetime.now().year, int(format['month']), int(format['weekday']), int(format['occurence']))
-            queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
-            row = row + f" is scheduled on {v_date}\n\n"
-            response = response + row
-    await insert_data(queris)
+    if 0 in formats:
+        # if some events were not rescheduled by mistake.
+        # For example, bot was offline
+        days = await get_query("SELECT * FROM DAYS WHERE format = 0")
+        vToday = await get_today()
+        for day in days:
+            if len(ids) > 0 and day['id'] not in ids:
+                continue
+            vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
+            if vDate < vToday:
+                response = response + f"{day['descr']} (id:{day['id']}) was rescheduled, becuase {str(vToday)} (today) is bigger than {day['day']}\n\n"
+                await reschedule(day)
+    if 1 in formats:
+        queris = []
+        days = await get_query("SELECT * FROM DAYS WHERE format = 1")
+        for day in days:
+            if len(ids) > 0 and day['id'] not in ids:
+                continue
+            row = "* Event " + f"{day['descr']} "
+            if day['format'] == '1':
+                format = await get_query(f"SELECT * FROM WEEKDAY_prm WHERE day_id = {day['id']}")
+                format = format[0]
+                v_date = find_day_in_month(datetime.now().year, int(format['month']), int(format['weekday']), int(format['occurence']))
+                queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
+                row = row + f" is scheduled on {v_date}\n\n"
+                response = response + row
+    if len(queris) > 0:
+        await insert_data(queris)
     return response
 
 def find_day_in_month(year, month, day_of_week, occurrence):

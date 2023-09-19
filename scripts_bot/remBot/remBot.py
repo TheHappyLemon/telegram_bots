@@ -127,13 +127,15 @@ async def add_weekday(message: types.Message):
     queries.append(f"UPDATE DAYS SET format = 1 WHERE id = {args[0]} LIMIT 1")
     queries.append(f"INSERT INTO WEEKDAY_prm (day_id, weekday, occurence, month) VALUES({args[0]}, {args[1]}, {args[2]}, {args[3]})")
     await insert_data(queries)
-    await send_msg(to=message.from_user.id, msg=f"Succes! Information about event with id {args[0]} is updated")
+    response = await calculate_events([1], [args[0]])
+    await send_msg(to=message.from_user.id, msg=f"Succes! Information about event with id {args[0]} is updated\n{response}")
 
 @dp.message_handler(commands=['calculate'])
 async def calculate_command(message: types.Message):
     if not await check_usr(message.from_user.id, message):
-        return 
-    response = await calculate_events()
+        return
+    response = await calculate_events([0,1], [])
+    response = "Events were forcefully recaulculated:\n\n" +  response
     await send_msg(to=message.from_user.id, msg=response)
     
 @dp.message_handler(commands=['delete'])
@@ -187,29 +189,55 @@ async def handle_check_command(message: types.Message):
     await message.reply("Alive!" + " " + str(message.from_user.id))
 
 async def calculate_yearly(bot : Bot):
-    response = await calculate_events()
+    # calcualte only events that are irregular
+    response = await calculate_events([1])
     response = "This is result from yearly event calculation!:\n\n" + response
-    await send_msg(to=chat, msg=response)
+    await bot.send_message(chat, response)
 
-async def remind(bot : Bot, reschedule : bool):
+async def recalculate(bot : Bot):
+    # This function checks if a regular event that needs to be rescheduler, was not and reschedules it.
+    response = await calculate_events([0])
+    if  response > "":
+        response = "Daily recalculation result:\n\n" + response
+        await bot.send_message(chat, response)
+
+async def remind(bot : Bot, to_reschedule : bool):
+    '''
+
+    msgs structure:
+    {
+        'day_id':{
+            'msg' : 'message text',
+            'users': [user_id_1, user_id_2 ... ]
+        },
+        ...
+    }
+    '''
     days = await get_query("SELECT * FROM DAYS ORDER BY day")
-    msg = ""
+    msgs = {}
     today = await get_today()
     tomorrow = today + timedelta(days=1)
     week = today + timedelta(days=7)    
     for day in days:
-        answ = await check_day(day, reschedule, today, tomorrow, week)
+        answ = await check_day(day, to_reschedule, today, tomorrow, week)
         if answ > "":
-            msg = msg + answ + '\n\n'
-    if msg > "":
-        msg = "Attention:\n\n" + msg
-        await bot.send_message(chat, msg)    
+            msgs[day['id']] = {}
+            msgs[day['id']]['msg'] = answ
+            msgs[day['id']]['users'] = []
+            usrs = await get_query(f"SELECT * FROM link WHERE format = 'days' AND id1 = {int(day['id'])}")
+            for usr in usrs:
+                msgs[day['id']]['users'].append(usr['usr_id'])
+    for event in msgs:
+        for usr_id in msgs[event]['users']:
+            await bot.send_message(usr_id, msgs[event]['msg']) 
+    
 
 async def on_startup(dp : Dispatcher):
     scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
     scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
-    #scheduler.add_job(remind, 'cron', second = '*', args=(bot, False,)) - test
+    #scheduler.add_job(remind, 'cron', second = '*', args=(bot, False,))
     scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
+    scheduler.add_job(recalculate, 'cron', hour='4', minute='00', timezone='Europe/Kiev', args=(bot,))
 
 if __name__ == '__main__':
     scheduler.start()
