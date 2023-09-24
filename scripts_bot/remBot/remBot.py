@@ -8,7 +8,7 @@ from datetime import date
 async def get_menu(message: types.Message):
     if not await check_usr(message.from_user.id, message):
         return    
-    days = await get_query("SELECT * FROM DAYS ORDER BY day")
+    days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id;")
     msg = f"There are {len(days)} events:\n\n"
     for day in days:
         if day['day'] is None:
@@ -18,9 +18,16 @@ async def get_menu(message: types.Message):
             row = row + f" Repeat every {day['period_am']} {day['period']}."
         else:
             row = row + f" Don`t repeat."
-        row = row + f" (id:{day['id']})"
+        if day['name'] != None:
+            # tg://user?id=320645316) 
+            # "["+iBot.members[bs_chat][member]+"](tg://user?id="+str(member)+")" + "\n"
+            author = f"[{day['name']}](tg://user?id={day['tg_id']})"
+        else:
+            author = 'UNKNOWN'
+        row = await parse_msg(row)
+        row = row + f" id = {day['id']}, author = {author}"
         msg = msg + row + "\n\n"
-    await send_msg(to=message.from_user.id, msg=msg)
+    await bot.send_message(message.from_user.id, msg, parse_mode="Markdown")
 
 @dp.message_handler(commands=['jobs'])
 async def get_menu(message: types.Message):
@@ -74,9 +81,9 @@ async def add_event(message: types.Message):
             args[0] = "'" + args[0] + "'"
         else:
             args[0] = "NULL"
-        query = f"INSERT INTO DAYS (day, descr) VALUES({args[0]}, '{args[1]}')"
+        query = f"INSERT INTO DAYS (day, descr, who) VALUES({args[0]}, '{args[1]}', {message.from_user.id})"
     else:
-        query = f"INSERT INTO DAYS (day, descr, period, period_am) VALUES('{args[0]}', '{args[1]}', '{args[2]}', '{args[3]}')"
+        query = f"INSERT INTO DAYS (day, descr, period, period_am, who) VALUES('{args[0]}', '{args[1]}', '{args[2]}', '{args[3]}', {message.from_user.id})"
     querris = []
     querris.append(query)
     await insert_data(querris)
@@ -224,7 +231,7 @@ async def remind(bot : Bot, to_reschedule : bool):
             msgs[day['id']] = {}
             msgs[day['id']]['msg'] = answ
             msgs[day['id']]['users'] = []
-            usrs = await get_query(f"SELECT * FROM link WHERE format = 'days' AND id1 = {int(day['id'])}")
+            usrs = await get_query(f"SELECT * FROM link WHERE format = 'days' AND opt = 'look' AND id1 = {int(day['id'])}")
             for usr in usrs:
                 msgs[day['id']]['users'].append(usr['usr_id'])
     for event in msgs:

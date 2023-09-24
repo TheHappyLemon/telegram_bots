@@ -13,6 +13,14 @@ bot = Bot(token=TOKEN)
 scheduler = AsyncIOScheduler()
 dp = Dispatcher(bot)
 
+async def parse_msg(msg: str, slash : bool = True):
+    if slash:
+        # escapes slash with a slash
+        msg = msg.replace('\\', '\\\\')
+    for char in Markdown_ch_all:
+        msg = msg.replace(char, '\\' + char)
+    return msg
+
 async def send_msg(to : int, msg : str):
     # maximum length of a telegram message is 4096 symbols. if msg is too big:
     # 1 - find last newline in given interval (from <i> to <i + max_len>)
