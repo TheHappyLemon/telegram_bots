@@ -154,6 +154,8 @@ async def calculate_events(formats : list, ids : list = []):
         days = await get_query("SELECT * FROM DAYS WHERE format = 0")
         vToday = await get_today()
         for day in days:
+            if day['day'] == None:
+                continue
             if len(ids) > 0 and day['id'] not in ids:
                 continue
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
@@ -162,15 +164,13 @@ async def calculate_events(formats : list, ids : list = []):
                 await reschedule(day)
     if 1 in formats:
         queris = []
-        days = await get_query("SELECT * FROM DAYS WHERE format = 1")
+        days = await get_query("SELECT * FROM DAYS INNER JOIN WEEKDAY_prm ON DAYS.id = WEEKDAY_prm.day_id WHERE format = 1 ORDER BY day;")
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
                 continue
             row = "* Event " + f"{day['descr']} "
             if day['format'] == '1':
-                format = await get_query(f"SELECT * FROM WEEKDAY_prm WHERE day_id = {day['id']}")
-                format = format[0]
-                v_date = find_day_in_month(datetime.now().year, int(format['month']), int(format['weekday']), int(format['occurence']))
+                v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
                 queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
                 row = row + f" is scheduled on {v_date}\n\n"
                 response = response + row
