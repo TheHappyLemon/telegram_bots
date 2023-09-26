@@ -8,7 +8,15 @@ from datetime import date
 async def get_menu(message: types.Message):
     if not await check_usr(message.from_user.id, message):
         return    
-    days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id ORDER BY day;")
+    days = await get_query(f'''
+        SELECT DAYS.*, USERS.*
+        FROM DAYS
+        LEFT JOIN link ON DAYS.id = link.id1 AND link.format = 'days' AND link.opt = 'look'
+        LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+        WHERE link.usr_id = {message.from_user.id}
+        ORDER BY DAYS.day;
+    ''')
+    #days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id ORDER BY day;")
     msg = f"There are {len(days)} events:\n\n"
     for day in days:
         if day['day'] is None:
@@ -221,17 +229,85 @@ async def add_listener(message: types.Message):
         msg = f"Only author of this event, can make it visible for another user. " + f"[author](tg://user?id={answ[0]['who']})"
         await bot.send_message(message.from_user.id, msg, parse_mode="Markdown")
         return
-    answ = await get_query(f"SELECT tg_id FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
-    print(answ)
+    answ = await get_query(f"SELECT tg_id, name FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
     if len(answ) == 0:
         await send_msg(to=message.from_user.id, msg=f"I dont know user with name {args[1]}")
         return
-    answ = answ[0]['tg_id']
-    query = f"INSERT INTO link(usr_id, id1, opt, format) VALUES({answ}, {args[0]}, 'look', 'days');"
+    answ = answ[0]
+    answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
+    if len(answ_link) != 0:
+        await bot.send_message(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) already listens to this event", "Markdown")
+        return
+    query = f"INSERT INTO link(usr_id, id1, opt, format) VALUES({answ['tg_id']}, {args[0]}, 'look', 'days');"
     querris = []
     querris.append(query)
     await insert_data(querris)
-    await send_msg(to=message.from_user.id, msg=f"Done!\n\nEvent with id {args[0]} is now available to user {args[1]}")
+    await bot.send_message(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is now available to user [{answ['name']}](tg://user?id={answ['tg_id']})", "Markdown")
+
+@dp.message_handler(commands=['remove_listener'])
+async def add_listener(message: types.Message):
+    # /add_listener <id> <user_name>
+    if not await check_usr(message.from_user.id, message):
+        return
+    args = message.get_args().split()
+    if len(args) != 2:
+        await send_msg(to=message.from_user.id, msg=f"You should provide only two arguments: id of an event and user_name")
+        return
+    try:
+        int(args[0])
+    except ValueError:
+        await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
+        return
+    answ = await get_query(f"SELECT id, who FROM DAYS WHERE id = {args[0]}")
+    if len(answ) == 0:
+        await send_msg(to=message.from_user.id, msg=f"Event with id {args[0]} does not exist")
+        return
+    if int(answ[0]['who']) != message.from_user.id:
+        msg = f"Only author of this event, can remove listener from an event. " + f"[author](tg://user?id={answ[0]['who']})"
+        await bot.send_message(message.from_user.id, msg, parse_mode="Markdown")
+        return
+    answ = await get_query(f"SELECT tg_id, name FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
+    if len(answ) == 0:
+        await send_msg(to=message.from_user.id, msg=f"I dont know user with name {args[1]}")
+        return
+    answ = answ[0]
+    answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
+    if len(answ_link) == 0:
+        await bot.send_message(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) can not see this event anyway!", "Markdown")
+        return
+    query = f"DELETE FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'"
+    querris = []
+    querris.append(query)
+    await insert_data(querris)
+    await bot.send_message(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from user [{answ['name']}](tg://user?id={answ['tg_id']})", "Markdown")
+
+@dp.message_handler(commands=['stop_listening'])
+async def stop_listening(message: types.Message):
+    # /stop_listening <id>
+    if not await check_usr(message.from_user.id, message):
+        return
+    args = message.get_args().split()
+    if len(args) != 1:
+        await send_msg(to=message.from_user.id, msg=f"You should provide only one argument: id of an event")
+        return
+    try:
+        int(args[0])
+    except ValueError:
+        await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
+        return
+    answ = await get_query(f"SELECT id, who FROM DAYS WHERE id = {args[0]}")
+    if len(answ) == 0:
+        await send_msg(to=message.from_user.id, msg=f"Event with id {args[0]} does not exist")
+        return
+    answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {message.from_user.id} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
+    if len(answ_link) == 0:
+        await bot.send_message(message.from_user.id, f"You are not listening to this event anyway!")
+        return
+    query = f"DELETE FROM link WHERE usr_id = {message.from_user.id} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'"
+    querris = []
+    querris.append(query)
+    await insert_data(querris)
+    await bot.send_message(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from you")
 
 async def calculate_yearly(bot : Bot):
     # calcualte only events that are irregular
@@ -263,7 +339,6 @@ async def remind(bot : Bot, to_reschedule : bool):
     today = await get_today()
     tomorrow = today + timedelta(days=1)
     week = today + timedelta(days=7)
-    await bot.send_message(chat, days) 
     for day in days:
         if day['day'] == None:
             continue
@@ -276,16 +351,20 @@ async def remind(bot : Bot, to_reschedule : bool):
             msgs[day['id']]['users'].append(day['usr_id'])
     for event in msgs:
         for usr_id in msgs[event]['users']:
-            await bot.send_message(usr_id, str(msgs)) 
-            #await bot.send_message(usr_id, msgs[event]['msg']) 
+            await bot.send_message(usr_id, msgs[event]['msg']) 
 
+@dp.message_handler(commands=['dudu'])
+async def stop_listening(message: types.Message):
+    msg = '<a href="tg://user?id=125975888">inline mention of a user</a>'
+    await bot.send_message(chat, msg, 'HTML') 
 
 async def on_startup(dp : Dispatcher):
-    scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
-    scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
-    #scheduler.add_job(remind, 'cron', second = '*', args=(bot, False))
-    scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
-    scheduler.add_job(recalculate, 'cron', hour='4', minute='00', timezone='Europe/Kiev', args=(bot,))
+    pass
+    #scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
+    #scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
+    #scheduler.add_job(remind, 'cron', second = '2', args=(bot, True))
+    #scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
+    #scheduler.add_job(recalculate, 'cron', hour='4', minute='00', timezone='Europe/Kiev', args=(bot,))
 
 if __name__ == '__main__':
     scheduler.start()
