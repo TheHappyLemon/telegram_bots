@@ -33,7 +33,7 @@ async def get_menu(message: types.Message):
         row = await parse_msg(row)
         row = row + f" id = {day['id']}, author = {author}"
         msg = msg + row + "\n\n"
-    await bot.send_message(message.from_user.id, msg, parse_mode="Markdown")
+    await bot.send_message(message.from_user.id, msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 @dp.message_handler(commands=['jobs'])
 async def get_menu(message: types.Message):
@@ -94,7 +94,8 @@ async def add_event(message: types.Message):
     querris.append(query)
     await insert_data(querris)
     querris = []
-    day = await get_query(f"SELECT id FROM DAYS WHERE day = {args[0]} AND descr = '{args[1]}' AND who = {message.from_user.id}")
+    day_check = "day IS NULL" if args[0] == "NULL" else f"day = {args[0]}"
+    day = await get_query(f"SELECT id FROM DAYS WHERE {day_check} AND descr = '{args[1]}' AND who = {message.from_user.id}")
     day = day[0] # must be only one record
     query = f"INSERT INTO link(usr_id, id1, opt, format) VALUES({message.from_user.id}, {day['id']}, 'look', 'days');"
     querris.append(query)
@@ -169,6 +170,11 @@ async def deletea_event(message: types.Message):
         int(args[0])
     except ValueError:
         await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
+        return
+    answ = await get_query(f"SELECT who, name FROM DAYS LEFT JOIN USERS ON USERS.tg_id = DAYS.who WHERE DAYS.id = {args[0]}")
+    answ = answ[0]
+    if int(answ['who']) != message.from_user.id:
+        await send_msg(to=message.from_user.id, msg=f"Only author can delete event! Author = {answ['name']}")
         return
     query = f"DELETE FROM DAYS WHERE id = {args[0]} LIMIT 1"
     querris = []
@@ -352,11 +358,6 @@ async def remind(bot : Bot, to_reschedule : bool):
     for event in msgs:
         for usr_id in msgs[event]['users']:
             await bot.send_message(usr_id, msgs[event]['msg']) 
-
-@dp.message_handler(commands=['dudu'])
-async def stop_listening(message: types.Message):
-    msg = '<a href="tg://user?id=125975888">inline mention of a user</a>'
-    await bot.send_message(chat, msg, 'HTML') 
 
 async def on_startup(dp : Dispatcher):
     pass
