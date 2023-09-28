@@ -82,14 +82,14 @@ async def add_event(message: types.Message):
             return
     args[1] = args[1].replace(delim, ' ')
     query = "INSERT INTO DAYS (day, descr"
-    if len(args) == 2 or args[0] == "?":
-        if args[0] != "?":
-            args[0] = "'" + args[0] + "'"
-        else:
-            args[0] = "NULL"
+    if  args[0] == "?":
+        args[0] = "NULL"
+    else:
+        args[0] = "'" + args[0] + "'"
+    if len(args) == 2 or args[0] == "NULL":
         query = f"INSERT INTO DAYS (day, descr, who) VALUES({args[0]}, '{args[1]}', {message.from_user.id})"
     else:
-        query = f"INSERT INTO DAYS (day, descr, period, period_am, who) VALUES('{args[0]}', '{args[1]}', '{args[2]}', '{args[3]}', {message.from_user.id})"
+        query = f"INSERT INTO DAYS (day, descr, period, period_am, who) VALUES({args[0]}, '{args[1]}', '{args[2]}', '{args[3]}', {message.from_user.id})"
     querris = []
     querris.append(query)
     await insert_data(querris)
