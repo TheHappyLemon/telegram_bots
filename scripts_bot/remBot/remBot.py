@@ -4,8 +4,15 @@ from aiogram import Bot, Dispatcher, types, executor
 from remUtils import *
 from datetime import date
 
+import random
+import string
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatActions
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.exceptions import *
+
 @dp.message_handler(commands=['print'])
-async def get_menu(message: types.Message):
+async def print_events(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return    
     days = await get_query(f'''
@@ -33,10 +40,11 @@ async def get_menu(message: types.Message):
         row = await parse_msg(row)
         row = row + f" id = {day['id']}, author = {author}"
         msg = msg + row + "\n\n"
-    await bot.send_message(message.from_user.id, msg, parse_mode="Markdown", disable_web_page_preview=True)
+    await send_msg(message.from_user.id, msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 @dp.message_handler(commands=['jobs'])
-async def get_menu(message: types.Message):
+async def print_jobs(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return    
     f = open('jobs.txt', 'w')
@@ -50,6 +58,7 @@ async def get_menu(message: types.Message):
 
 @dp.message_handler(commands=['add'])
 async def add_event(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return    
     if message.text.count('"') > 2:
@@ -104,6 +113,7 @@ async def add_event(message: types.Message):
 
 @dp.message_handler(commands=['add_weekday'])
 async def add_weekday(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
     args = message.get_args().split()
@@ -152,6 +162,7 @@ async def add_weekday(message: types.Message):
 
 @dp.message_handler(commands=['calculate'])
 async def calculate_command(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
     response = await calculate_events([0,1], [])
@@ -159,7 +170,8 @@ async def calculate_command(message: types.Message):
     await send_msg(to=message.from_user.id, msg=response)
     
 @dp.message_handler(commands=['delete'])
-async def deletea_event(message: types.Message):
+async def delete_event(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return    
     args = message.get_args().split()
@@ -184,6 +196,7 @@ async def deletea_event(message: types.Message):
 
 @dp.message_handler(commands=['help'])
 async def help_event(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
     msg = "I can answer to following 4 commands:"
@@ -208,14 +221,16 @@ async def help_event(message: types.Message):
     await send_msg(to=message.from_user.id, msg=msg)
 
 @dp.message_handler(commands=['check'])
-async def handle_check_command(message: types.Message):
+async def check_myself(message: types.Message):
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
-    await message.reply("Alive!" + " " + str(message.from_user.id))
+    await send_msg(message.from_user.id, "Alive!" + " " + str(message.from_user.id))
 
 @dp.message_handler(commands=['add_listener'])
 async def add_listener(message: types.Message):
     # /add_listener <id> <user_name>
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
     args = message.get_args().split()
@@ -233,7 +248,7 @@ async def add_listener(message: types.Message):
         return
     if int(answ[0]['who']) != message.from_user.id:
         msg = f"Only author of this event, can make it visible for another user. " + f"[author](tg://user?id={answ[0]['who']})"
-        await bot.send_message(message.from_user.id, msg, parse_mode="Markdown")
+        await send_msg(message.from_user.id, msg, parse_mode="Markdown")
         return
     answ = await get_query(f"SELECT tg_id, name FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
     if len(answ) == 0:
@@ -242,17 +257,18 @@ async def add_listener(message: types.Message):
     answ = answ[0]
     answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
     if len(answ_link) != 0:
-        await bot.send_message(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) already listens to this event", "Markdown")
+        await send_msg(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) already listens to this event", parse_mode = "Markdown")
         return
     query = f"INSERT INTO link(usr_id, id1, opt, format) VALUES({answ['tg_id']}, {args[0]}, 'look', 'days');"
     querris = []
     querris.append(query)
     await insert_data(querris)
-    await bot.send_message(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is now available to user [{answ['name']}](tg://user?id={answ['tg_id']})", "Markdown")
+    await send_msg(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is now available to user [{answ['name']}](tg://user?id={answ['tg_id']})", parse_mode = "Markdown")
 
 @dp.message_handler(commands=['remove_listener'])
-async def add_listener(message: types.Message):
+async def rem_listener(message: types.Message):
     # /add_listener <id> <user_name>
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
     args = message.get_args().split()
@@ -270,7 +286,7 @@ async def add_listener(message: types.Message):
         return
     if int(answ[0]['who']) != message.from_user.id:
         msg = f"Only author of this event, can remove listener from an event. " + f"[author](tg://user?id={answ[0]['who']})"
-        await bot.send_message(message.from_user.id, msg, parse_mode="Markdown")
+        await send_msg(message.from_user.id, msg, parse_mode="Markdown")
         return
     answ = await get_query(f"SELECT tg_id, name FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
     if len(answ) == 0:
@@ -279,17 +295,18 @@ async def add_listener(message: types.Message):
     answ = answ[0]
     answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
     if len(answ_link) == 0:
-        await bot.send_message(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) can not see this event anyway!", "Markdown")
+        await send_msg(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) can not see this event anyway!", parse_mode="Markdown")
         return
     query = f"DELETE FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'"
     querris = []
     querris.append(query)
     await insert_data(querris)
-    await bot.send_message(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from user [{answ['name']}](tg://user?id={answ['tg_id']})", "Markdown")
+    await send_msg(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from user [{answ['name']}](tg://user?id={answ['tg_id']})", parse_mode="Markdown")
 
 @dp.message_handler(commands=['stop_listening'])
 async def stop_listening(message: types.Message):
     # /stop_listening <id>
+    await handle_user(message)
     if not await check_usr(message.from_user.id, message):
         return
     args = message.get_args().split()
@@ -307,26 +324,26 @@ async def stop_listening(message: types.Message):
         return
     answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {message.from_user.id} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
     if len(answ_link) == 0:
-        await bot.send_message(message.from_user.id, f"You are not listening to this event anyway!")
+        await send_msg(message.from_user.id, f"You are not listening to this event anyway!")
         return
     query = f"DELETE FROM link WHERE usr_id = {message.from_user.id} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'"
     querris = []
     querris.append(query)
     await insert_data(querris)
-    await bot.send_message(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from you")
+    await send_msg(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from you")
 
 async def calculate_yearly(bot : Bot):
     # calcualte only events that are irregular
     response = await calculate_events([1])
     response = "This is result from yearly event calculation!:\n\n" + response
-    await bot.send_message(chat, response)
+    await send_msg(chat, response)
 
 async def recalculate(bot : Bot):
     # This function checks if a regular event that needs to be rescheduler, was not and reschedules it.
     response = await calculate_events([0])
     if  response > "":
         response = "Daily recalculation result:\n\n" + response
-        await bot.send_message(chat, response)
+        await send_msg(chat, response)
 
 async def remind(bot : Bot, to_reschedule : bool):
     '''
@@ -357,15 +374,75 @@ async def remind(bot : Bot, to_reschedule : bool):
             msgs[day['id']]['users'].append(day['usr_id'])
     for event in msgs:
         for usr_id in msgs[event]['users']:
-            await bot.send_message(usr_id, msgs[event]['msg']) 
+            await send_msg(usr_id, msgs[event]['msg'])
+
+@dp.message_handler(commands=['start'])
+async def start(message: types.Message):
+    await handle_user(message)
+    sent_message = await send_msg(message.from_user.id, "Static message")
+    sent_message_id = sent_message.message_id
+    await send_msg(message.from_user.id, f"id of static msg = {sent_message_id}")
+
+@dp.message_handler(commands=['edit'])
+async def edit_message(message: types.Message):
+    await handle_user(message)
+    usr_id = message.from_user.id
+    message_id = await get_query(f"SELECT days_msg_id FROM USERS WHERE tg_id = {usr_id}")
+    message_id = message_id[0]['days_msg_id']
+    # if there is no msg id in DB
+    if message_id == None:
+        print("1")
+        message_id = await send_new_static_msg(usr_id, default_keyboard_text)
+    try:
+        print("2")
+        await bot.edit_message_text(chat_id=usr_id, message_id=message_id, text=''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+)
+    # if message was deleted by user
+    except MessageToEditNotFound:
+        print("3")
+        message_id = await send_new_static_msg(usr_id, default_keyboard_text)
+    except Exception as e:
+        print("4")
+        await send_msg(usr_id, "An error ocured trying to modify main message:\n\n" + str(e))
+
+@dp.message_handler(commands=['clear'])
+async def delete_messages(message: types.Message):
+    await handle_user(message)
+    await bot.send_chat_action(message.from_user.id, ChatActions.TYPING)
+    await delete_all_messages(message.chat.id)
+
+@dp.message_handler()
+async def echo(message: types.Message):
+    await handle_user(message)
+    await send_msg(to = message.from_user.id, msg = "Aaaaargh, unknown command. Type /help")
+
+async def delete_all_messages(chat_id : int):
+    msgs = await get_query(f"SELECT * FROM DAYS_messages INNER JOIN USERS ON USERS.tg_id = DAYS_messages.chat_id WHERE chat_id = {chat_id}")
+    for msg in msgs:
+        if msg['msg_id'] == msg['days_msg_id']:
+            continue
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg['msg_id'])
+        except Exception as e:
+            fail = True
+    querries = [f"DELETE FROM DAYS_messages WHERE chat_id = {chat_id}"]
+    await insert_data(querries)
+    if fail:
+        await send_msg(chat_id, "Some messages were failed to be deleted. You can either delete them manualy, or Right Click on our chat and press 'Clear history'")
+
+async def send_new_static_msg(usr_id : int, msg : str, reply_markup : ReplyKeyboardMarkup = None):
+    sent_message = await send_msg(usr_id, msg)
+    message_id = sent_message.message_id
+    await insert_data([f"UPDATE USERS SET days_msg_id = {message_id} WHERE tg_id = {usr_id}"])
+    return message_id
+
 
 async def on_startup(dp : Dispatcher):
-    pass
-    #scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
-    #scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
+    scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
+    scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
     #scheduler.add_job(remind, 'cron', second = '2', args=(bot, True))
-    #scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
-    #scheduler.add_job(recalculate, 'cron', hour='4', minute='00', timezone='Europe/Kiev', args=(bot,))
+    scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
+    scheduler.add_job(recalculate, 'cron', hour='4', minute='00', timezone='Europe/Kiev', args=(bot,))
 
 if __name__ == '__main__':
     scheduler.start()

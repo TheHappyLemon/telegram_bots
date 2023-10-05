@@ -21,7 +21,7 @@ async def parse_msg(msg: str, slash : bool = True):
         msg = msg.replace(char, '\\' + char)
     return msg
 
-async def send_msg(to : int, msg : str):
+async def send_msg(to : int, msg : str, parse_mode : str = None, disable_web_page_preview : bool = True):
     # maximum length of a telegram message is 4096 symbols. if msg is too big:
     # 1 - find last newline in given interval (from <i> to <i + max_len>)
     # 2 - create chunk from <i> to <\n pos>
@@ -48,9 +48,29 @@ async def send_msg(to : int, msg : str):
             msg_list.append(line)
     else:
         msg_list.append(msg)
+    querries = []
     for chunk in msg_list:
         if not(chunk == "" or chunk == '\n'):
-            await bot.send_message(to, chunk)
+            sent_msg = await bot.send_message(to, chunk, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview)
+            sent_msg_id = sent_msg.message_id
+            query = f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({to}, {sent_msg_id})"
+            querries.append(query)
+    await insert_data(querries)
+    return sent_msg
+
+async def handle_user(message : types.Message):
+    tg_id  = message.from_user.id
+    name   = message.from_user.username
+    msg_id = message.message_id
+    answ = await get_query(f"SELECT tg_id FROM USERS WHERE tg_id = {tg_id} LIMIT 1;")
+    if len(answ) == 0:
+        if name == None:
+            name = str(tg_id)
+        queries = []
+        queries.append(f"INSERT INTO USERS (tg_id, name) VALUES ({tg_id}, '{name}');")
+        await insert_data(queries)
+    queries = [f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({tg_id}, {msg_id})"]
+    await insert_data(queries)
 
 async def check_usr(from_id : int, message : types.Message):
     if not from_id in users:
