@@ -418,6 +418,7 @@ async def echo(message: types.Message):
 
 async def delete_all_messages(chat_id : int):
     msgs = await get_query(f"SELECT * FROM DAYS_messages INNER JOIN USERS ON USERS.tg_id = DAYS_messages.chat_id WHERE chat_id = {chat_id}")
+    fail = False
     for msg in msgs:
         if msg['msg_id'] == msg['days_msg_id']:
             continue
