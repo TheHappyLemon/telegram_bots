@@ -4,333 +4,66 @@ from aiogram import Bot, Dispatcher, types, executor
 from remUtils import *
 from datetime import date
 
+from time import sleep
 import random
 import string
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatActions
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils.exceptions import *
+import traceback
 
-@dp.message_handler(commands=['print'])
-async def print_events(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return    
-    days = await get_query(f'''
-        SELECT DAYS.*, USERS.*
-        FROM DAYS
-        LEFT JOIN link ON DAYS.id = link.id1 AND link.format = 'days' AND link.opt = 'look'
-        LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
-        WHERE link.usr_id = {message.from_user.id}
-        ORDER BY DAYS.day;
-    ''')
-    #days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id ORDER BY day;")
-    msg = f"There are {len(days)} events:\n\n"
-    for day in days:
-        if day['day'] is None:
-            day['day'] = '<Not calculated>'
-        row = "* " + f"{day['day']}: {day['descr']}."
-        if day['period_am'] != None and day['period'] != None:
-            row = row + f" Repeat every {day['period_am']} {day['period']}."
-        else:
-            row = row + f" Don`t repeat."
-        if day['name'] != None:
-            author = f"[{day['name']}](tg://user?id={day['tg_id']})"
-        else:
-            author = 'UNKNOWN'
-        row = await parse_msg(row)
-        row = row + f" id = {day['id']}, author = {author}"
-        msg = msg + row + "\n\n"
-    await send_msg(message.from_user.id, msg, parse_mode="Markdown", disable_web_page_preview=True)
+@dp.message_handler(commands=['ping'])
+async def ping(message: types.Message):
+    usr_id = message.from_user.id
+    if message.from_user.id != chat:
+        return
+    await send_msg(message.from_user.id, f"Alive! {usr_id}")
 
-@dp.message_handler(commands=['jobs'])
-async def print_jobs(message: types.Message):
+@dp.message_handler(commands=['start'])
+async def start(message: types.Message):
     await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return    
+    usr_id = message.from_user.id
+    queries = []
+    queries.append(f"UPDATE USERS SET sts_chat      = 'IDLE' WHERE tg_id = {usr_id};")
+    queries.append(f"UPDATE USERS SET last_keyboard = 0      WHERE tg_id = {usr_id};")
+    await insert_data(queries)
+    keyboard  = await get_keyboard(group_id=0, user_id = usr_id)
+    await send_new_static_msg(usr_id, default_keyboard_text, keyboard)
+    await delete_all_messages(usr_id)
+
+@dp.message_handler(commands=['clear'])
+async def delete_messages(message: types.Message):
+    await handle_user(message)
+    await bot.send_chat_action(message.from_user.id, ChatActions.TYPING)
+    await delete_all_messages(message.chat.id)
+
+async def get_day_info(day : dict, prefix : str = ""):
+    date = day['day']
+    descr = day['descr']
+    if date == None:
+        date = default_not_data
+    if descr == None:
+        descr = default_not_data
+    return prefix + f"Event is called {day['name']}. It is scheduled on {date}.\n\nEvent is about {descr}"
+
+async def calc_force(**kwargs):
+    usr_id = kwargs['usr_id']
+    reply_markup = await get_back_btn(keyboard_id=6)
+    response = await calculate_events([0,1], [])
+    response = "Events were forcefully recaulculated:\n\n" +  response
+    await edit_message(usr_id, response, reply_markup)
+    return ""
+
+async def print_jobs(**kwargs):
+    usr_id = kwargs['usr_id']
+    reply_markup = await get_back_btn(keyboard_id=6)
     f = open('jobs.txt', 'w')
     scheduler.print_jobs(out = f)
     f.flush()
     f.close()
     f = open('jobs.txt', 'r')
     text = f.read()
-    await send_msg(to=message.from_user.id, msg=text)
-
-
-@dp.message_handler(commands=['add'])
-async def add_event(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return    
-    if message.text.count('"') > 2:
-        await send_msg(to=message.from_user.id, msg="Error: You should only use double quotes to enquote event description. Otherwise I can`t work 😭")
-        return
-    elif message.text.count('"') < 2:
-        await send_msg(to=message.from_user.id, msg="Error: You must use double quotes to enquote event description. Otherwise I can`t work 😭")
-        return
-    message.text = sub(r'"(.*?)"', replace_spaces, message.text)
-    # date description period(optional) period_am(optional)
-    args = message.get_args().split()
-    if len(args) != 2 and len(args) != 4:
-        await send_msg(to=message.from_user.id, msg="Error: Add command accept 2 (date, description) or 4(date, description, period, period amount) arguments.")
-        return
-    if args[0] != '?':
-        if not await is_valid_date(args[0]):
-            await send_msg(to=message.from_user.id, msg=f"Bad date provided. Date should be in format yyyy-mm-dd. For example todays date should be written as {date.today().strftime('%Y-%m-%d')}.")
-            return
-    if args[1] == "":
-        await send_msg(to=message.from_user.id, msg=f"Description can not be empty.")
-        return
-    if len(args) > 2:
-        if not args[2] in periods:
-            await send_msg(to=message.from_user.id, msg=f"Bad period provided. Only {', '.join(periods)} are allowed.")
-            return
-        try:
-            int(args[3])
-        except ValueError:
-            await send_msg(to=message.from_user.id, msg=f"Period amount should be an integer.")
-            return
-    args[1] = args[1].replace(delim, ' ')
-    query = "INSERT INTO DAYS (day, descr"
-    if  args[0] == "?":
-        args[0] = "NULL"
-    else:
-        args[0] = "'" + args[0] + "'"
-    if len(args) == 2 or args[0] == "NULL":
-        query = f"INSERT INTO DAYS (day, descr, who) VALUES({args[0]}, '{args[1]}', {message.from_user.id})"
-    else:
-        query = f"INSERT INTO DAYS (day, descr, period, period_am, who) VALUES({args[0]}, '{args[1]}', '{args[2]}', '{args[3]}', {message.from_user.id})"
-    querris = []
-    querris.append(query)
-    await insert_data(querris)
-    querris = []
-    day_check = "day IS NULL" if args[0] == "NULL" else f"day = {args[0]}"
-    day = await get_query(f"SELECT id FROM DAYS WHERE {day_check} AND descr = '{args[1]}' AND who = {message.from_user.id}")
-    day = day[0] # must be only one record
-    query = f"INSERT INTO link(usr_id, id1, opt, format) VALUES({message.from_user.id}, {day['id']}, 'look', 'days');"
-    querris.append(query)
-    await insert_data(querris)
-    await send_msg(to=message.from_user.id, msg=f"Done! Event was scheduled.")
-
-@dp.message_handler(commands=['add_weekday'])
-async def add_weekday(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    args = message.get_args().split()
-    if len(args) != 4:
-        await send_msg(to=message.from_user.id, msg="Error: /add_weekday command accepts 4 arguments: <day_id> <weekday> <occurence> <month>.")
-        return
-    bd_day = await get_query(f"SELECT * FROM DAYS WHERE id = {args[0]}")
-    if len(bd_day) == 0:
-        await send_msg(to=message.from_user.id, msg=f"Error: Event with id {args[0]} not found in a Database")
-        return
-    day_of_week_ok = False
-    args[1] = args[1].lower()
-    tmp = args[1]
-    for day_of_week in days_of_week:
-        if args[1] in days_of_week[day_of_week]:
-            day_of_week_ok = True
-            args[1] = day_of_week
-            break
-    if not day_of_week_ok:
-        await send_msg(to=message.from_user.id, msg=f"Error: {tmp} is not a valid weekday. You should either type full name (ENG/RUS), or type days number [1..7])")
-        return
-    try:
-        args[2] = int(args[2])
-    except ValueError:
-        await send_msg(to=message.from_user.id, msg=f"Error: occurence must be an integer. {args[2]} is not a valid integer")
-    if args[2] > 5 or args[2] < 1 :
-        await send_msg(to=message.from_user.id, msg=f"Error: Occurence has to be in range [1..5] including")
-        return
-    tmp = args[3]
-    month_ok = False
-    for month in months:
-        if args[3] in months[month]:
-            month_ok = True
-            args[3] = month
-            break
-    if not month_ok:
-        await send_msg(to=message.from_user.id, msg=f"Error: {tmp} is not a valid month. You should either type full name (ENG/RUS), or type month number [1..12])")
-        return
-    # input is good
-    queries = []
-    queries.append(f"UPDATE DAYS SET format = 1 WHERE id = {args[0]} LIMIT 1")
-    queries.append(f"INSERT INTO WEEKDAY_prm (day_id, weekday, occurence, month) VALUES({args[0]}, {args[1]}, {args[2]}, {args[3]})")
-    await insert_data(queries)
-    response = await calculate_events([1], [args[0]])
-    await send_msg(to=message.from_user.id, msg=f"Succes! Information about event with id {args[0]} is updated\n{response}")
-
-@dp.message_handler(commands=['calculate'])
-async def calculate_command(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    response = await calculate_events([0,1], [])
-    response = "Events were forcefully recaulculated:\n\n" +  response
-    await send_msg(to=message.from_user.id, msg=response)
-    
-@dp.message_handler(commands=['delete'])
-async def delete_event(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return    
-    args = message.get_args().split()
-    if len(args) != 1:
-        await send_msg(to=message.from_user.id, msg=f"You should provide only one arguments: id of an event.")
-        return
-    try:
-        int(args[0])
-    except ValueError:
-        await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
-        return
-    answ = await get_query(f"SELECT who, name FROM DAYS LEFT JOIN USERS ON USERS.tg_id = DAYS.who WHERE DAYS.id = {args[0]}")
-    answ = answ[0]
-    if int(answ['who']) != message.from_user.id:
-        await send_msg(to=message.from_user.id, msg=f"Only author can delete event! Author = {answ['name']}")
-        return
-    query = f"DELETE FROM DAYS WHERE id = {args[0]} LIMIT 1"
-    querris = []
-    querris.append(query)
-    await insert_data(querris)
-    await send_msg(to=message.from_user.id, msg=f"Done! Event was deleted from database.")
-
-@dp.message_handler(commands=['help'])
-async def help_event(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    msg = "I can answer to following 4 commands:"
-    msg = msg + "\n" + "1) /check - If a message is written, then I am working, if not then I`m down."
-    msg = msg + "\n" + "2) /print - Prints out information about all events in a database."
-    msg = msg + "\n" + "3) /delete <id> - <id> is an integer which uniquely identifies an event in a database. Deleted event can not be recovered. You can obtains events id from /print command."
-    msg = msg + "For example, if I want to delete event with id 777, I have to write following command:"
-    msg = msg + '\n\n' + "/delete 777"
-    msg = msg + "\n\n" + '4) /add <date> <"description of an event"> <period> <period_amount> - Schedules a new event in a database. <date> is the events date (should be in yyyy-mm-dd format), <description> - long text about event'
-    msg = msg + ", <period> (year,month,week,day) is needed if you want event to be repeated after this period, <period_amount> - how many 'periods' should pass until event is repeated"
-    msg = msg + " <period> and <period_amount> can be omitted."
-    msg = msg + "For example, if I want to schedule event called 'Giga day' on 22 april 2023 and it happens every year, I must write following:"
-    msg = msg + '\n\n' + '/add 2023-04-22 "Giga day" year 1' + '\n\n' + 'But if this event happens only once, I must write:'
-    msg = msg + '\n\n' + '/add 2023-04-22 "Giga day"'
-    msg = msg + "\n\nIf event happens under specific circumstances, and needs to be calculated, instead of <date> enter ? and then enter additional information withh /add_weekday command"
-    msg = msg + "\n\n" + "5) /add_weekday - <day_id> <weekday> <occurence> <month> - Adds information about event that happen on n-th day of week of some month. For example on second sunday of october."
-    msg = msg + " But first you need to add this day through regular /add command and specify None as date. <day_id> - from /print command, <weekday> - 0 - monday and 6 - sunday, <occurence> - 1 to 5 (incl)"
-    msg = msg + "<month> - 1 to 12. All fields are mandatory"
-    msg = msg + "\n\n" + "6) /jobs - list information of currently active jobs in AppScheduler"
-    msg = msg + "\n" + "7) /calculate - calculate values for events, that happen under specific cirumstances"
-    msg = msg + '\n\n' + 'By the way, I dont have "edit" button, so to change an event, simply delete the old one and create another one with correct information 😉'
-    await send_msg(to=message.from_user.id, msg=msg)
-
-@dp.message_handler(commands=['check'])
-async def check_myself(message: types.Message):
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    await send_msg(message.from_user.id, "Alive!" + " " + str(message.from_user.id))
-
-@dp.message_handler(commands=['add_listener'])
-async def add_listener(message: types.Message):
-    # /add_listener <id> <user_name>
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    args = message.get_args().split()
-    if len(args) != 2:
-        await send_msg(to=message.from_user.id, msg=f"You should provide only two arguments: id of an event and user_name")
-        return
-    try:
-        int(args[0])
-    except ValueError:
-        await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
-        return
-    answ = await get_query(f"SELECT id, who FROM DAYS WHERE id = {args[0]}")
-    if len(answ) == 0:
-        await send_msg(to=message.from_user.id, msg=f"Event with id {args[0]} does not exist")
-        return
-    if int(answ[0]['who']) != message.from_user.id:
-        msg = f"Only author of this event, can make it visible for another user. " + f"[author](tg://user?id={answ[0]['who']})"
-        await send_msg(message.from_user.id, msg, parse_mode="Markdown")
-        return
-    answ = await get_query(f"SELECT tg_id, name FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
-    if len(answ) == 0:
-        await send_msg(to=message.from_user.id, msg=f"I dont know user with name {args[1]}")
-        return
-    answ = answ[0]
-    answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
-    if len(answ_link) != 0:
-        await send_msg(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) already listens to this event", parse_mode = "Markdown")
-        return
-    query = f"INSERT INTO link(usr_id, id1, opt, format) VALUES({answ['tg_id']}, {args[0]}, 'look', 'days');"
-    querris = []
-    querris.append(query)
-    await insert_data(querris)
-    await send_msg(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is now available to user [{answ['name']}](tg://user?id={answ['tg_id']})", parse_mode = "Markdown")
-
-@dp.message_handler(commands=['remove_listener'])
-async def rem_listener(message: types.Message):
-    # /add_listener <id> <user_name>
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    args = message.get_args().split()
-    if len(args) != 2:
-        await send_msg(to=message.from_user.id, msg=f"You should provide only two arguments: id of an event and user_name")
-        return
-    try:
-        int(args[0])
-    except ValueError:
-        await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
-        return
-    answ = await get_query(f"SELECT id, who FROM DAYS WHERE id = {args[0]}")
-    if len(answ) == 0:
-        await send_msg(to=message.from_user.id, msg=f"Event with id {args[0]} does not exist")
-        return
-    if int(answ[0]['who']) != message.from_user.id:
-        msg = f"Only author of this event, can remove listener from an event. " + f"[author](tg://user?id={answ[0]['who']})"
-        await send_msg(message.from_user.id, msg, parse_mode="Markdown")
-        return
-    answ = await get_query(f"SELECT tg_id, name FROM USERS WHERE LOWER(name) = '{args[1].lower().strip()}'")
-    if len(answ) == 0:
-        await send_msg(to=message.from_user.id, msg=f"I dont know user with name {args[1]}")
-        return
-    answ = answ[0]
-    answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
-    if len(answ_link) == 0:
-        await send_msg(message.from_user.id, f"User [{answ['name']}](tg://user?id={answ['tg_id']}) can not see this event anyway!", parse_mode="Markdown")
-        return
-    query = f"DELETE FROM link WHERE usr_id = {answ['tg_id']} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'"
-    querris = []
-    querris.append(query)
-    await insert_data(querris)
-    await send_msg(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from user [{answ['name']}](tg://user?id={answ['tg_id']})", parse_mode="Markdown")
-
-@dp.message_handler(commands=['stop_listening'])
-async def stop_listening(message: types.Message):
-    # /stop_listening <id>
-    await handle_user(message)
-    if not await check_usr(message.from_user.id, message):
-        return
-    args = message.get_args().split()
-    if len(args) != 1:
-        await send_msg(to=message.from_user.id, msg=f"You should provide only one argument: id of an event")
-        return
-    try:
-        int(args[0])
-    except ValueError:
-        await send_msg(to=message.from_user.id, msg=f"Id should be an integer!")
-        return
-    answ = await get_query(f"SELECT id, who FROM DAYS WHERE id = {args[0]}")
-    if len(answ) == 0:
-        await send_msg(to=message.from_user.id, msg=f"Event with id {args[0]} does not exist")
-        return
-    answ_link = await get_query(f"SELECT id FROM link WHERE usr_id = {message.from_user.id} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'")
-    if len(answ_link) == 0:
-        await send_msg(message.from_user.id, f"You are not listening to this event anyway!")
-        return
-    query = f"DELETE FROM link WHERE usr_id = {message.from_user.id} AND id1 = {args[0]} AND opt = 'look' AND format = 'days'"
-    querris = []
-    querris.append(query)
-    await insert_data(querris)
-    await send_msg(message.from_user.id, f"Done!\n\nEvent with id {args[0]} is hidden from you")
+    await edit_message(usr_id, f"Jobs:\n\n{text}", reply_markup)
+    return ""
 
 async def calculate_yearly(bot : Bot):
     # calcualte only events that are irregular
@@ -376,66 +109,170 @@ async def remind(bot : Bot, to_reschedule : bool):
         for usr_id in msgs[event]['users']:
             await send_msg(usr_id, msgs[event]['msg'])
 
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    await handle_user(message)
-    sent_message = await send_msg(message.from_user.id, "Static message")
-    sent_message_id = sent_message.message_id
-    await send_msg(message.from_user.id, f"id of static msg = {sent_message_id}")
-
-@dp.message_handler(commands=['edit'])
-async def edit_message(message: types.Message):
-    await handle_user(message)
-    usr_id = message.from_user.id
-    message_id = await get_query(f"SELECT days_msg_id FROM USERS WHERE tg_id = {usr_id}")
-    message_id = message_id[0]['days_msg_id']
-    # if there is no msg id in DB
-    if message_id == None:
-        print("1")
-        message_id = await send_new_static_msg(usr_id, default_keyboard_text)
-    try:
-        print("2")
-        await bot.edit_message_text(chat_id=usr_id, message_id=message_id, text=''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-)
-    # if message was deleted by user
-    except MessageToEditNotFound:
-        print("3")
-        message_id = await send_new_static_msg(usr_id, default_keyboard_text)
-    except Exception as e:
-        print("4")
-        await send_msg(usr_id, "An error ocured trying to modify main message:\n\n" + str(e))
-
-@dp.message_handler(commands=['clear'])
-async def delete_messages(message: types.Message):
-    await handle_user(message)
-    await bot.send_chat_action(message.from_user.id, ChatActions.TYPING)
-    await delete_all_messages(message.chat.id)
 
 @dp.message_handler()
 async def echo(message: types.Message):
+    usr_id = message.from_user.id
     await handle_user(message)
-    await send_msg(to = message.from_user.id, msg = "Aaaaargh, unknown command. Type /help")
+    user_sts = await get_query(f"SELECT sts_chat, last_keyboard FROM USERS WHERE tg_id = {usr_id}")
+    user_sts = user_sts[0]
+    querries = []
+    input = await escape_mysql(message.text.strip().lower())
+    # input = await parse_msg(message.text.strip().lower())
+    keyboard = None
+    sts_chat = user_sts['sts_chat']
+    clear_chat = True
+    try:
+        if sts_chat == "EVENTS_ADD_R" or sts_chat == "EVENTS_ADD_I":
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+            msg = "Event created!\n\nTo modify its parameters, press button 'Modify data'\nTo modify its acces parameters, press 'Modify acces'"
+            if sts_chat == "EVENTS_ADD_R":
+                querries.append(f"INSERT INTO DAYS(name, who) VALUES('{input}', {usr_id})")
+            else:
+                querries.append(f"INSERT INTO DAYS(name, format, who) VALUES('{input}', 1, {usr_id})")
+            await insert_data(querries)
+            day = await get_query(f"SELECT id FROM DAYS WHERE name = '{input}' AND who = {usr_id}")
+            day = day[0]
+            querries.clear()
+            if sts_chat == "EVENTS_ADD_I":
+                querries.append(f"INSERT INTO WEEKDAY_prm (day_id) VALUES({day['id']})")
+            querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'look', 'days');")
+            querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'modify', 'days');")
+        elif sts_chat == "MODIFY_DEL":
+            if await isYes(message.text.strip().lower()):
+                querries.append(f"DELETE FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+                keyboard = await get_keyboard(group_id=1, user_id = usr_id)
+                msg = "Event deleted succesfully!"
+            else:
+                msg = "Event NOT deleted"
+                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+        elif sts_chat == "MODIFY_DESC":
+            querries.append(f"UPDATE DAYS SET descr = '{input}' WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+            keyboard = await get_keyboard(group_id=2, user_id = usr_id)
+            msg = "Description updated succesfully"
+        elif sts_chat == "MODIFY_AMT":
+            keyboard = await get_keyboard(group_id=2, user_id = usr_id)
+            try:
+                int(input)
+                querries.append(f"UPDATE DAYS SET period_am = {input} WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+                msg = "Period amount updated succesfully"
+            except ValueError:
+                msg = "Whooops an error ocured:\n\n" + "Period amount should be an integer!"
+            except Exception as e:
+                msg = "Whooops an error ocured:\n\n" + str(e)
+        elif sts_chat == 'MODIFY_DATE':
+            if await is_valid_year(input):
+                querries.append(f"UPDATE USERS SET last_input = '{input}'")
+                await insert_data(querries)
+                await change_date_month(usr_id = usr_id)
+                return
+            else:
+                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
+                msg = "Bad year provided! Date not changed"
+        elif sts_chat == 'MODIFY_DATE_MM':
+            if await is_valid_month(input):
+                answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
+                answ_day = answ_day[0]['last_input']
+                querries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + input}'")
+                await insert_data(querries)
+                await change_date_day(usr_id = usr_id)
+                return
+            else:
+                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
+                msg = "Bad month provided! Date not changed"
+        elif sts_chat == 'MODIFY_DATE_DD':
+            if await is_valid_day(input):
+                answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
+                answ_day = answ_day[0]['last_input']
+                querries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + input}'")
+                await insert_data(querries)
+                await change_date_date(usr_id = usr_id)
+                return
+            else:
+                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
+                msg = "Bad date provided! Date not changed"
+        elif sts_chat == 'INVITE_SEND_LOOK' or sts_chat == 'INVITE_SEND_MODF':
+            if sts_chat == 'INVITE_SEND_LOOK':
+                warn = 'subscribed to this event'
+                inv  = "'subscriber'"
+                opt = "'look'"
+            elif sts_chat  == "INVITE_SEND_MODF":
+                warn = 'redactor of this event'
+                inv  = "'redactor'"
+                opt = "'modify'"
+            usr_to = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{input}'")
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+            if len(usr_to) == 0:
+                msg = f"Invitation not send:\nUser {input} not found."
+            else:
+                usr_to = usr_to[0]['tg_id']
+                is_listening = await get_query(f"SELECT id FROM link WHERE usr_id = {usr_to} AND id1 = (SELECT event_id FROM USERS WHERE tg_id = {usr_id}) AND format = 'days' AND opt = {opt}")
+                if len(is_listening) != 0:
+                    msg = f" Invitation not send\n\nUser is already {warn}."
+                else:
+                    event_answ = await get_query(f"SELECT * FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+                    event_answ = event_answ[0]
+                    querries.append(f"INSERT INTO DAYS_invites(usr_from, usr_to, day_id, type) VALUES({usr_id}, {usr_to}, {event_answ['id']}, {opt})")
+                    await insert_data(querries)
+                    querries.clear()
+                    # Notify user that he received an invitation
+                    notification = await get_day_info(event_answ, f"User {message.from_user.username} has sent you a {inv} invitation!\n\n")
+                    notification = notification + "\n\nGo to 'My invitaions' to accept or reject this invitation."
+                    await send_msg(usr_to, notification)
+                    msg = f"Invitation sent to user {input}"
+                    clear_chat = False
 
-async def delete_all_messages(chat_id : int):
-    msgs = await get_query(f"SELECT * FROM DAYS_messages INNER JOIN USERS ON USERS.tg_id = DAYS_messages.chat_id WHERE chat_id = {chat_id}")
-    fail = False
-    for msg in msgs:
-        if msg['msg_id'] == msg['days_msg_id']:
-            continue
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=msg['msg_id'])
-        except Exception as e:
-            fail = True
-    querries = [f"DELETE FROM DAYS_messages WHERE chat_id = {chat_id}"]
-    await insert_data(querries)
-    if fail:
-        await send_msg(chat_id, "Some messages were failed to be deleted. You can either delete them manualy, or Right Click on our chat and press 'Clear history'")
-
-async def send_new_static_msg(usr_id : int, msg : str, reply_markup : ReplyKeyboardMarkup = None):
-    sent_message = await send_msg(usr_id, msg)
-    message_id = sent_message.message_id
-    await insert_data([f"UPDATE USERS SET days_msg_id = {message_id} WHERE tg_id = {usr_id}"])
-    return message_id
+        elif sts_chat == "MODIFY_NAME":
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+            is_taken = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{input}'")
+            if len(is_taken) != 0:
+                msg = f"Error:\n\nUsername '{input}' is already taken!"
+                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
+            else:
+                querries.append(f"UPDATE USERS SET last_input = '{input}'")
+                await insert_data(querries)
+                await confirm_choice(usr_id, input, 5)
+                return
+        elif sts_chat == "FEEDBACK_LEAVE":
+            whn = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            querries.append(f"INSERT INTO FEEDBACK (data, user_id, whn) VALUES ('{input}', {usr_id}, '{whn}')")   
+            querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
+            msg = f"Feedback saved!\n\nThanks for information!"
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+        elif sts_chat == "FEEDBACK_ANSW":
+            feedback_id = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
+            feedback_id = feedback_id[0]['last_input']
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+            if feedback_id == None:
+                msg = f"Something went wrong... Try again"
+            else:
+                feedback_id = int(feedback_id)
+                querries.append(f"UPDATE FEEDBACK SET answer = '{input}' WHERE id = {feedback_id}")
+                querries.append(f"UPDATE FEEDBACK SET sts    = 2         WHERE id = {feedback_id}")
+                msg = f"Answer saved!"
+                # Notification
+                feedback_sender = await get_query(f"SELECT user_id, whn FROM FEEDBACK WHERE id = {feedback_id}")
+                feedback_sender = feedback_sender[0]
+                clear_chat = False
+                await send_msg(feedback_sender['user_id'], f"Notification:\n\nFeedback that you left on '{feedback_sender['whn']}' was replied to! Go to My settings -> print feedback. Now it has status 'answered'")
+        else:
+            msg = "Aaaaargh, unknown command"
+        await insert_data(querries)
+        await edit_message(usr_id, msg, keyboard)
+        if clear_chat:
+            await delete_all_messages(usr_id)
+    except  Exception as e:
+         print(e)
+         traceback.print_exc()
+         msg = f"Oooops, an error ocured:\n\n{str(e)}"
+         await edit_message(usr_id, msg, keyboard)
+    finally:
+        pass
+        #await edit_message(usr_id, msg, keyboard)
+        #await delete_all_messages(usr_id)
 
 
 async def on_startup(dp : Dispatcher):
