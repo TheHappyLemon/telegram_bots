@@ -22,15 +22,6 @@ async def print_events(**kwargs):
         WHERE link.usr_id = {usr_id}
         ORDER BY DAYS.day;
     ''')
-    print(f'''
-        SELECT DAYS.*, USERS.*
-        FROM DAYS
-        LEFT JOIN link ON DAYS.id = link.id1 AND link.format = 'days' AND link.opt = 'look'
-        LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
-        LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
-        WHERE link.usr_id = {usr_id}
-        ORDER BY DAYS.day;
-    ''')
     #days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id ORDER BY day;")
     msg = f"There are {len(days)} events:\n\n"
     for day in days:
@@ -88,26 +79,35 @@ async def add_irregular(**kwargs):
 
 async def change_date(**kwargs):
     usr_id = kwargs['usr_id']
-    event_name = kwargs['event_name']
-    reply_markup = await get_back_btn(keyboard_id=2)
-    await edit_message(usr_id, f"Enter new date year for event {event_name}", reply_markup)
+    keyboard = InlineKeyboardMarkup()
+    year_now = date.today().year
+    for i in range(year_now + 30, year_now - 1, -1):
+        button = InlineKeyboardButton(text=str(i), callback_data=f'DATE_YEAR_CHOOSEN;{i}')
+        keyboard.add(button)
+    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
+    keyboard.add(button)
+    await edit_message(usr_id, f"Choose new date year:", keyboard)
     return ""
 
 async def change_date_month(**kwargs):
-    usr_id = kwargs['usr_id'] 
-    querries = [] 
-    querries.append(f"UPDATE USERS SET sts_chat = 'MODIFY_DATE_MM' WHERE tg_id = {usr_id};")
-    await insert_data(querries)
-    reply_markup = await get_back_btn(keyboard_id=2)
-    await edit_message(usr_id, f"Enter new date month", reply_markup)
+    usr_id = kwargs['usr_id']
+    keyboard = InlineKeyboardMarkup()
+    for mnt_key, mnt_val in months.items():
+        button = InlineKeyboardButton(text=mnt_val, callback_data=f'DATE_MONTH_CHOOSEN;{mnt_key}')
+        keyboard.add(button)
+    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
+    keyboard.add(button)
+    await edit_message(usr_id, f"Choose new date month:", keyboard)
 
 async def change_date_day(**kwargs):
-    usr_id = kwargs['usr_id'] 
-    querries = [] 
-    querries.append(f"UPDATE USERS SET sts_chat = 'MODIFY_DATE_DD' WHERE tg_id = {usr_id};")
-    await insert_data(querries)
-    reply_markup = await get_back_btn(keyboard_id=2)
-    await edit_message(usr_id, f"Enter new date day", reply_markup)
+    usr_id = kwargs['usr_id']
+    keyboard = InlineKeyboardMarkup()
+    for i in range(1, 32):
+        button = InlineKeyboardButton(text=str(i), callback_data=f'DATE_DAY_CHOOSEN;{i}')
+        keyboard.add(button)
+    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
+    keyboard.add(button)
+    await edit_message(usr_id, f"Choose new date day:", keyboard)
 
 async def change_date_date(**kwargs):
     usr_id = kwargs['usr_id'] 
@@ -117,10 +117,10 @@ async def change_date_date(**kwargs):
     answ_date = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
     answ_date = answ_date[0]['last_input']
     if not await is_valid_date(answ_date):
-        msg = f"Although year, month and day are correct values, date '{answ_date}' is not a valid date."
+        msg = f"Although year, month and day are correct values, date '{answ_date}' (format: yyyy-mm-dd) is not a valid date."
     else:
         querries.append(f"UPDATE DAYS SET day = '{answ_date}' WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
-        msg = f"Date was changed succesfully to '{answ_date}'"
+        msg = f"Date was changed succesfully to '{answ_date}' (format: yyyy-mm-dd)"
     await insert_data(querries)
     await edit_message(usr_id, msg, keyboard)
     await delete_all_messages(usr_id)
@@ -231,9 +231,7 @@ async def feedback_print(**kwargs):
     i = 1
     for feedback in feedbacks:
         additional = ""
-        print(feedback)
         sts, additional = await get_feedback_text(feedback['sts'], feedback['answer'])
-        print('additional =', additional)
         msg = msg + f"{i}) Status: '{sts}'. Left on {feedback['whn']}. Text: {feedback['data']}. {additional}\n"
         i = i + 1
     await edit_message(usr_id, msg, reply_markup)
@@ -250,7 +248,6 @@ async def invites_print(**kwargs):
         JOIN USERS u2 ON d.usr_to = u2.tg_id
         WHERE d.usr_from = {usr_id} AND d.day_id = {event_id};
     '''
-    print(query)
     invites = await get_query(query)
     if len(invites) == 0:  
         await edit_message(usr_id, f"There are no invites for event {event_name}", reply_markup)
@@ -329,7 +326,6 @@ async def check_event_acces(usr_id : int, goal : str):
     return event_acces == goal
 
 async def check_event_format(usr_id : int, goal : str):
-    print(f"SELECT id, name, format FROM DAYS WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
     event_format = await get_query(f"SELECT id, name, format FROM DAYS WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
     event_format = event_format[0]['format']
     return event_format == goal
@@ -354,8 +350,6 @@ async def print_invitations_my(**kwargs):
     WHERE di.usr_to = {usr_id} AND di.sts <> 'rejected' AND di.sts <> 'accepted'
     '''
     invites = await get_query(query)
-    print(invites,'\n')
-    print(invites)
     if len(invites) == 0:
         reply_markup = await get_back_btn(keyboard_id=7)
         await edit_message(usr_id, "You dont have any invites", reply_markup)
@@ -606,17 +600,14 @@ async def handle_button_press(callback_query: types.CallbackQuery):
         callback_data = callback_query.data.split(";")
         action_type =  callback_data[0]
         usr_id = callback_query.from_user.id
-        print(callback_data)
         queries = []
         # Load next keyboard that needs event name
         user_sts = await get_query(f"SELECT sts_chat FROM USERS WHERE tg_id = {usr_id}")
         user_sts = user_sts[0]['sts_chat']
-        print(user_sts,  action_type)
         keyboard = None
         if action_type == "EVENT_CHOOSEN":
             if user_sts == 'EVENTS_PICK_U' or user_sts == 'EVENTS_PICK_R':
                 day_data = await get_query(f"SELECT link.id, DAYS.name FROM link INNER JOIN DAYS ON (DAYS.id = link.id1) WHERE id1 = {callback_data[1]} AND opt = '{callback_data[2]}' AND link.format = 'days'")
-                print('link =', day_data)
                 msg = ""
                 if len(day_data) == 1:
                     msg = "IMPORTANT!\n\nYou are the only " + ("subscriber" if callback_data[2] == 'look' else "redactor") + f" of event {day_data[0]['name']}"
@@ -670,6 +661,24 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             # will calculate event only if weekday, occurence and month were filled
             await calculate_events(formats=[1],ids=[callback_data[2]])
             await edit_message(usr_id, "Month updated succesfully", keyboard)
+        elif action_type == "DATE_YEAR_CHOOSEN":
+            queries.append(f"UPDATE USERS SET last_input = '{callback_data[1]}' WHERE tg_id = {usr_id}")
+            await insert_data(queries)
+            await change_date_month(usr_id = usr_id)
+        elif action_type == "DATE_MONTH_CHOOSEN":
+            answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
+            answ_day = answ_day[0]['last_input']
+            mm = '0' + callback_data[1] if len(callback_data[1]) == 1 else callback_data[1]
+            queries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + mm}' WHERE tg_id = {usr_id}")
+            await insert_data(queries)
+            await change_date_day(usr_id = usr_id)
+        elif action_type == "DATE_DAY_CHOOSEN":
+            answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
+            answ_day = answ_day[0]['last_input']
+            dd = '0' + callback_data[1] if len(callback_data[1]) == 1 else callback_data[1]
+            queries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + dd}' WHERE tg_id = {usr_id}")
+            await insert_data(queries)
+            await change_date_date(usr_id = usr_id)
         elif action_type == "CONFIRM_CHOOSEN":
             if user_sts == 'MAKE_PRIVATE' or user_sts == 'MAKE_PUBLIC' :
                 group = 3 
@@ -709,7 +718,6 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 if callback_data[1].lower() == "yes":
                     queries.append(f"DELETE FROM DAYS WHERE id = {callback_data[2]}")
                     queries.append(f"UPDATE USERS SET event_id = NULL WHERE tg_id = {usr_id}")
-                    print(f"SELECT * FROM link INNER JOIN DAYS ON (DAYS.id = link.id1) WHERE id1 = {callback_data[2]} AND opt = 'look' AND usr_id <> {usr_id}")
                     subscribers = await get_query(f"SELECT * FROM link INNER JOIN DAYS ON (DAYS.id = link.id1) WHERE id1 = {callback_data[2]} AND opt = 'look' AND usr_id <> {usr_id}")
                     author = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
                     author = author[0]['name']
@@ -753,13 +761,11 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     else:
                         msg = "Redactor rights removed"
                     msg = msg + " Succesfully!"
-                    print(callback_data[4], bool(callback_data[4]))
                     if callback_data[4] == 'True':
                         queries.append(f"DELETE FROM DAYS WHERE id = {callback_data[2]}")
                         queries.append(f"DELETE FROM link WHERE id1 = {callback_data[2]} AND format = 'days'")
                         msg = msg + f"\n\nEvent was deleted!"
                     else:
-                        print("deleting user link only")
                         queries.append(f"DELETE FROM link WHERE usr_id = {usr_id} AND id1 = {callback_data[2]} AND opt = '{callback_data[3]}' AND format = 'days'")
                 else:
                     msg = "Action aborted!"
@@ -809,7 +815,6 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 else:
                     event_id = 0
                 result = await globals()[callback_data[1]](usr_id=usr_id, event_name=event_name, event_id=event_id)
-                print(f"after executing {callback_data[1]} =", result)
     except Exception as e:
         msg = f"Ooops, an error ocured:\n {repr(e)}"
         traceback.print_exc()
@@ -837,7 +842,6 @@ async def edit_message(usr_id : int, text : str, reply_markup : InlineKeyboardMa
         pass
     except Exception as e:
         print(repr(e))
-        print(e)
         traceback.print_exc()
         await send_msg(usr_id, "An error ocured trying to modify main message:\n\n" + str(e))
 
@@ -866,7 +870,6 @@ async def get_keyboard(group_id : int, user_id : int, row_width : int = 2):
     for button_json in buttons_json:
         if button_json['showif'] != None:
             if not await globals()[button_json['showif']](usr_id=user_id):
-                print('skipping', button_json['text'])
                 continue
         data = button_json['func']
         if data == None:
@@ -880,10 +883,8 @@ async def get_keyboard(group_id : int, user_id : int, row_width : int = 2):
     return keyboard
 
 async def escape_mysql(msg : str):
-    print("before", msg)
     for char in  escape_chars:
         msg = msg.replace(char, '\\' + char)
-    print("after", msg)
     return msg
 
 async def parse_msg(msg: str, slash : bool = True):
@@ -943,7 +944,6 @@ async def handle_user(message : types.Message):
         queries.append(f"INSERT INTO USERS (tg_id, name) VALUES ({tg_id}, '{name}');")
         await insert_data(queries)
     queries = [f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({tg_id}, {msg_id})"]
-    print(queries)
     await insert_data(queries)
 
 async def check_usr(from_id : int, message : types.Message):
@@ -1044,19 +1044,32 @@ async def reschedule(day : dict) -> None:
     await insert_data(querris)
 
 async def check_day(day : dict, to_reschedule : bool, today : date, tomorrow : date, week : date) -> str:
-    # actually i also need to adjust timezones
-    # but i dont care
-    # return "" if no need to remind or string with reminder itself
     date = datetime.strptime(day['day'], "%Y-%m-%d").date()
+    notify = ""
+    notfiy_whn = ""
     if date == tomorrow:
-        return f"Tomorrow is {day['descr']}"
+        notfiy_whn = f"Tomorrow is"
     elif date == week:
-        return f"In 7 days there is {day['descr']}"
+        notfiy_whn =  f"In 7 days there is"
     elif date == today:
         if to_reschedule:
             await reschedule(day)
-        return f"Today is {day['descr']}"
-    return ""
+        notfiy_whn = f"Today is"
+    if notfiy_whn > "":
+        notify = f"Attention! {notfiy_whn} " + await get_day_info(day=day, frmt=1)
+    return notify
+
+async def get_day_info(day : dict, frmt : int):
+    date = day['day']
+    descr = day['descr']
+    if date == None:
+        date = default_not_data
+    if descr == None:
+        descr = default_not_data
+    if frmt == 0:
+        return f"Event is called {day['name']}. It is scheduled on {date}.\n\nEvent is about {descr}"
+    elif frmt == 1:
+        return f"{day['name']}.\n\nIt is about {descr}"
 
 async def author_link(name : str, tg_id : str):
     return f"[{name}](tg://user?id={tg_id})"
@@ -1070,7 +1083,6 @@ async def calculate_events(formats : list, ids : list = []):
     # 1 - irregular events
     response = ""
     queris = []
-    print("calucalte_events", formats, ids)
     if 0 in formats:
         # if some events were not rescheduled by mistake.
         # For example, bot was offline
@@ -1088,7 +1100,6 @@ async def calculate_events(formats : list, ids : list = []):
     if 1 in formats:
         queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN WEEKDAY_prm ON DAYS.id = WEEKDAY_prm.day_id WHERE format = 1 ORDER BY day;")
-        print(days)
         for day in days:
             if day['day'] == None:
                 continue

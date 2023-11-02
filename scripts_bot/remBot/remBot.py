@@ -35,36 +35,7 @@ async def delete_messages(message: types.Message):
     await handle_user(message)
     await bot.send_chat_action(message.from_user.id, ChatActions.TYPING)
     await delete_all_messages(message.chat.id)
-
-async def get_day_info(day : dict, prefix : str = ""):
-    date = day['day']
-    descr = day['descr']
-    if date == None:
-        date = default_not_data
-    if descr == None:
-        descr = default_not_data
-    return prefix + f"Event is called {day['name']}. It is scheduled on {date}.\n\nEvent is about {descr}"
-
-async def calc_force(**kwargs):
-    usr_id = kwargs['usr_id']
-    reply_markup = await get_back_btn(keyboard_id=6)
-    response = await calculate_events([0,1], [])
-    response = "Events were forcefully recaulculated:\n\n" +  response
-    await edit_message(usr_id, response, reply_markup)
-    return ""
-
-async def print_jobs(**kwargs):
-    usr_id = kwargs['usr_id']
-    reply_markup = await get_back_btn(keyboard_id=6)
-    f = open('jobs.txt', 'w')
-    scheduler.print_jobs(out = f)
-    f.flush()
-    f.close()
-    f = open('jobs.txt', 'r')
-    text = f.read()
-    await edit_message(usr_id, f"Jobs:\n\n{text}", reply_markup)
-    return ""
-
+    
 async def calculate_yearly(bot : Bot):
     # calcualte only events that are irregular
     response = await calculate_events([1])
@@ -160,40 +131,6 @@ async def echo(message: types.Message):
                 msg = "Whooops an error ocured:\n\n" + "Period amount should be an integer!"
             except Exception as e:
                 msg = "Whooops an error ocured:\n\n" + str(e)
-        elif sts_chat == 'MODIFY_DATE':
-            if await is_valid_year(input):
-                querries.append(f"UPDATE USERS SET last_input = '{input}'")
-                await insert_data(querries)
-                await change_date_month(usr_id = usr_id)
-                return
-            else:
-                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
-                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
-                msg = "Bad year provided! Date not changed"
-        elif sts_chat == 'MODIFY_DATE_MM':
-            if await is_valid_month(input):
-                answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
-                answ_day = answ_day[0]['last_input']
-                querries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + input}'")
-                await insert_data(querries)
-                await change_date_day(usr_id = usr_id)
-                return
-            else:
-                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
-                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
-                msg = "Bad month provided! Date not changed"
-        elif sts_chat == 'MODIFY_DATE_DD':
-            if await is_valid_day(input):
-                answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
-                answ_day = answ_day[0]['last_input']
-                querries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + input}'")
-                await insert_data(querries)
-                await change_date_date(usr_id = usr_id)
-                return
-            else:
-                keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
-                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
-                msg = "Bad date provided! Date not changed"
         elif sts_chat == 'INVITE_SEND_LOOK' or sts_chat == 'INVITE_SEND_MODF':
             if sts_chat == 'INVITE_SEND_LOOK':
                 warn = 'subscribed to this event'
@@ -219,7 +156,8 @@ async def echo(message: types.Message):
                     await insert_data(querries)
                     querries.clear()
                     # Notify user that he received an invitation
-                    notification = await get_day_info(event_answ, f"User {message.from_user.username} has sent you a {inv} invitation!\n\n")
+                    notification = await get_day_info(day=event_answ, frmt=0)
+                    notification = f"User {message.from_user.username} has sent you a {inv} invitation!\n\n" + notification
                     notification = notification + "\n\nGo to 'My invitaions' to accept or reject this invitation."
                     await send_msg(usr_to, notification)
                     msg = f"Invitation sent to user {input}"
@@ -265,10 +203,10 @@ async def echo(message: types.Message):
         if clear_chat:
             await delete_all_messages(usr_id)
     except  Exception as e:
-         print(e)
-         traceback.print_exc()
-         msg = f"Oooops, an error ocured:\n\n{str(e)}"
-         await edit_message(usr_id, msg, keyboard)
+        print(e)
+        traceback.print_exc()
+        msg = f"Oooops, an error ocured:\n\n{str(e)}"
+        await edit_message(usr_id, msg, keyboard)
     finally:
         pass
         #await edit_message(usr_id, msg, keyboard)
@@ -278,7 +216,7 @@ async def echo(message: types.Message):
 async def on_startup(dp : Dispatcher):
     scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, False,))
     scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, True,))
-    #scheduler.add_job(remind, 'cron', second = '2', args=(bot, True))
+    # scheduler.add_job(remind, 'cron', second = '*', args=(bot, False))
     scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
     scheduler.add_job(recalculate, 'cron', hour='4', minute='00', timezone='Europe/Kiev', args=(bot,))
 
