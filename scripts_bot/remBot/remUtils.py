@@ -65,17 +65,21 @@ async def get_back_btn(keyboard_id : int):
     keyboard.add(button)
     return keyboard
 
-async def add_regular(**kwargs):
+async def add_event(**kwargs):
     usr_id = kwargs['usr_id']
+    type =  kwargs['type']
     reply_markup = await get_back_btn(keyboard_id=1)
-    await edit_message(usr_id, "Enter new regular event name", reply_markup)
+    await edit_message(usr_id, f"Enter new {type} event name", reply_markup)
     return ""
 
+async def add_regular(**kwargs):
+    return await add_event(kwargs, type='regular')
+    
 async def add_irregular(**kwargs):
-    usr_id = kwargs['usr_id']
-    reply_markup = await get_back_btn(keyboard_id=1)
-    await edit_message(usr_id, "Enter new irregular event name", reply_markup)
-    return ""
+    return await add_event(kwargs, type='irregular')
+
+async def add_continious(**kwargs):
+    return await add_event(kwargs, type='continious')
 
 async def change_date(**kwargs):
     usr_id = kwargs['usr_id']
