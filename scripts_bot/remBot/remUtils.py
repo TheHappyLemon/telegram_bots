@@ -613,7 +613,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     msg = "IMPORTANT!\n\nYou are the only " + ("subscriber" if callback_data[2] == 'look' else "redactor") + f" of event {day_data[0]['name']}"
                     msg = msg + '\nIf you continue, this event will be deleted!'
                 await confirm_choice(usr_id, callback_data[1] + ";" + callback_data[2] + ";" + str(len(day_data) == 1), 1, msg)
-            elif user_sts == 'EVENTS_PICK_D' or user_sts == 'EVENTS_PICK_D':
+            elif user_sts == 'EVENTS_PICK_D' or user_sts == 'EVENTS_PICK_A':
                 if user_sts == 'EVENTS_PICK_D':
                     group = 2
                 elif user_sts == 'EVENTS_PICK_A':
