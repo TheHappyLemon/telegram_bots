@@ -65,17 +65,21 @@ async def get_back_btn(keyboard_id : int):
     keyboard.add(button)
     return keyboard
 
-async def add_regular(**kwargs):
+async def add_event(**kwargs):
     usr_id = kwargs['usr_id']
+    type   = kwargs['type']
     reply_markup = await get_back_btn(keyboard_id=1)
-    await edit_message(usr_id, "Enter new regular event name", reply_markup)
+    await edit_message(usr_id, f"Enter new {type} event name", reply_markup)
     return ""
 
+async def add_continious(**kwargs):
+    return await add_event(**kwargs, type='continious')
+
+async def add_regular(**kwargs):
+    return await add_event(**kwargs, type='regular')
+
 async def add_irregular(**kwargs):
-    usr_id = kwargs['usr_id']
-    reply_markup = await get_back_btn(keyboard_id=1)
-    await edit_message(usr_id, "Enter new irregular event name", reply_markup)
-    return ""
+    return await add_event(**kwargs, type='irregular')
 
 async def change_date(**kwargs):
     usr_id = kwargs['usr_id']
@@ -110,17 +114,60 @@ async def change_date_day(**kwargs):
     await edit_message(usr_id, f"Choose new date day:", keyboard)
 
 async def change_date_date(**kwargs):
-    usr_id = kwargs['usr_id'] 
+    usr_id  = kwargs['usr_id'] 
+    usr_sts = kwargs['usr_sts'] 
     querries = []
     keyboard = await get_keyboard(2, usr_id)
     querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
     answ_date = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
     answ_date = answ_date[0]['last_input']
+    msg = f"Date was changed succesfully to '{answ_date}' (format: yyyy-mm-dd)"
     if not await is_valid_date(answ_date):
         msg = f"Although year, month and day are correct values, date '{answ_date}' (format: yyyy-mm-dd) is not a valid date."
     else:
-        querries.append(f"UPDATE DAYS SET day = '{answ_date}' WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
-        msg = f"Date was changed succesfully to '{answ_date}' (format: yyyy-mm-dd)"
+        day_id = await get_query(f"SELECT event_id FROM USERS WHERE tg_id = {usr_id}")
+        day_id = day_id[0]['event_id']
+        if usr_sts == "MODIFY_DATE":
+            querries.append(f"UPDATE DAYS SET day = '{answ_date}' WHERE DAYS.id = {day_id}")
+        elif usr_sts in ["MODIFY_BGN", "MODIFY_END"]:
+            vToday = await get_today()
+            if usr_sts == "MODIFY_BGN":
+                vDayStart = datetime.strptime(answ_date, "%Y-%m-%d").date()
+                vDayEnd = await get_query(f"SELECT day_end FROM CONTINIOUSDAY_prm WHERE day_id = {day_id}")
+                vDayEnd = vDayEnd[0]['day_end']
+                if vDayEnd != None:
+                    vDayEnd = datetime.strptime(vDayEnd, "%Y-%m-%d").date()
+                else:
+                    vDayEnd = await get_infinite_date()
+                print(vDayStart, vDayEnd, (vDayStart > vDayEnd))
+                if vDayStart > vDayEnd:
+                    msg = f"Start date {vDayStart} can not be greater than end date {vDayEnd}"
+                elif vDayStart == vDayEnd:
+                    msg = f"Start date {vDayStart} can not be equal to end date {vDayEnd}"
+                else:
+                    querries.append(f"UPDATE CONTINIOUSDAY_prm SET day_start = '{answ_date}' WHERE day_id = {day_id}")
+                    if vToday < vDayStart:
+                        # if period has not started yet, then set day.day to period beginning
+                        querries.append(f"UPDATE DAYS SET day = '{answ_date}' WHERE id = {day_id}")
+                    elif vToday >= vDayStart:
+                        # if period has started, then set day.day to tommorow
+                        querries.append(f'''UPDATE DAYS SET day = '{(vToday + (timedelta(days=1))).strftime("%Y-%m-%d")}' WHERE id = {day_id}''')
+            elif usr_sts == "MODIFY_END":
+                vDayEnd = datetime.strptime(answ_date, "%Y-%m-%d").date()
+                vDayStart = await get_query(f"SELECT day_start FROM CONTINIOUSDAY_prm WHERE day_id = {day_id}")
+                vDayStart = vDayStart[0]['day_start']
+                if vDayStart != None:
+                    vDayStart = datetime.strptime(vDayStart, "%Y-%m-%d").date()
+                else:
+                    vDayStart = await get_tiny_date()
+                if vDayStart > vDayEnd:
+                    msg = f"End date {vDayEnd} can not be smaller than start date {vDayStart}"
+                elif vDayStart == vDayEnd:
+                    msg = f"End date {vDayEnd} can not be equal to start date {vDayStart}"
+                elif vToday > vDayEnd:
+                    msg = f"Today {vToday} is already past {vDayEnd}. End date should be bigger than today"
+                else:
+                    querries.append(f"UPDATE CONTINIOUSDAY_prm SET day_end = '{answ_date}' WHERE day_id = {day_id}")
     await insert_data(querries)
     await edit_message(usr_id, msg, keyboard)
     await delete_all_messages(usr_id)
@@ -429,6 +476,9 @@ async def is_event_regular(**kwargs):
 async def is_event_irregular(**kwargs):
     return await check_event_format(kwargs['usr_id'], '1')
 
+async def is_event_continious(**kwargs):
+    return await check_event_format(kwargs['usr_id'], '2')
+
 async def make_private(**kwargs):
     await set_acces(kwargs['usr_id'], 'private')
     return ""
@@ -678,7 +728,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             dd = '0' + callback_data[1] if len(callback_data[1]) == 1 else callback_data[1]
             queries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + dd}' WHERE tg_id = {usr_id}")
             await insert_data(queries)
-            await change_date_date(usr_id = usr_id)
+            await change_date_date(usr_id = usr_id, usr_sts = user_sts)
         elif action_type == "CONFIRM_CHOOSEN":
             if user_sts == 'MAKE_PRIVATE' or user_sts == 'MAKE_PUBLIC' :
                 group = 3 
@@ -1018,6 +1068,12 @@ async def get_today():
     # was needed for tests mainly
     #return datetime.strptime("2023-07-09", "%Y-%m-%d").date()
     return date.today()
+
+async def get_infinite_date():
+    return datetime(9999, 1, 1).date()
+
+async def get_tiny_date():
+    return datetime(1, 1, 1).date()
     
 async def reschedule(day : dict) -> None:
     if day["period"] == None or int(day["period_am"]) == None:
@@ -1083,11 +1139,11 @@ async def calculate_events(formats : list, ids : list = []):
     # 1 - irregular events
     response = ""
     queris = []
+    vToday = await get_today()
     if 0 in formats:
         # if some events were not rescheduled by mistake.
         # For example, bot was offline
         days = await get_query("SELECT * FROM DAYS WHERE format = 0")
-        vToday = await get_today()
         for day in days:
             if day['day'] == None:
                 continue
@@ -1101,18 +1157,33 @@ async def calculate_events(formats : list, ids : list = []):
         queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN WEEKDAY_prm ON DAYS.id = WEEKDAY_prm.day_id WHERE format = 1 ORDER BY day;")
         for day in days:
-            if day['day'] == None:
-                continue
             if len(ids) > 0 and day['id'] not in ids:
                 continue
             if day['month'] == None or day['weekday'] == None or day['occurence'] == None:
                 continue
             row = "* Event " + f"{day['descr']} "
-            if day['format'] == '1':
-                v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
-                queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
-                row = row + f" is scheduled on {v_date}\n\n"
-                response = response + row
+            v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
+            queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
+            row = row + f" is scheduled on {v_date}\n\n"
+            response = response + row
+    if 2 in formats:
+        queris = []
+        days = await get_query("SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE format = 2 ORDER BY day;")
+        for day in days:
+            if len(ids) > 0 and day['id'] not in ids:
+                continue
+            if day['day_start'] == None or day['day_end'] == None:
+                continue
+            row = "* Event " + f"{day['descr']} "
+            vDate  = day['day']
+            vStart = datetime.strptime(day['day_start'], "%Y-%m-%d").date() 
+            vEnd   = datetime.strptime(day['day_end'], "%Y-%m-%d").date() 
+            if vDate == None:
+                vDate = vToday
+            if vDate < vStart:
+                vRes = vStart
+            row = row + f" is scheduled on {v_date}\n\n"
+            response = response + row
     if len(queris) > 0:
         await insert_data(queris)
     return response

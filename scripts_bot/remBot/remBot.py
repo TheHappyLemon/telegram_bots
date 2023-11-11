@@ -94,26 +94,30 @@ async def echo(message: types.Message):
     sts_chat = user_sts['sts_chat']
     clear_chat = True
     try:
-        if sts_chat == "EVENTS_ADD_R" or sts_chat == "EVENTS_ADD_I":
+        if sts_chat in ["EVENTS_ADD_R", "EVENTS_ADD_I", "EVENTS_ADD_C"]:
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
             msg = "Event created!\n\nTo modify its parameters, press button 'Modify data'\nTo modify its acces parameters, press 'Modify acces'"
             if sts_chat == "EVENTS_ADD_R":
                 querries.append(f"INSERT INTO DAYS(name, who) VALUES('{input}', {usr_id})")
-            else:
+            elif sts_chat == "EVENTS_ADD_I":
                 querries.append(f"INSERT INTO DAYS(name, format, who) VALUES('{input}', 1, {usr_id})")
+            elif sts_chat == "EVENTS_ADD_C":
+                querries.append(f"INSERT INTO DAYS(name, format, who) VALUES('{input}', 2, {usr_id})")
             await insert_data(querries)
             day = await get_query(f"SELECT id FROM DAYS WHERE name = '{input}' AND who = {usr_id}")
             day = day[0]
             querries.clear()
             if sts_chat == "EVENTS_ADD_I":
                 querries.append(f"INSERT INTO WEEKDAY_prm (day_id) VALUES({day['id']})")
+            elif sts_chat == "EVENTS_ADD_C":
+                querries.append(f"INSERT INTO CONTINIOUSDAY_prm (day_id) VALUES({day['id']})")
             querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'look', 'days');")
             querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'modify', 'days');")
         elif sts_chat == "MODIFY_DEL":
             if await isYes(message.text.strip().lower()):
                 querries.append(f"DELETE FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
                 keyboard = await get_keyboard(group_id=1, user_id = usr_id)
-                msg = "Event deleted succesfully!"
+                msg = "Event DELETED succesfully!"
             else:
                 msg = "Event NOT deleted"
                 keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
