@@ -8,5 +8,5 @@ CREATE TABLE DAYS_buttons (
     parent_id INT,
     accs_lvl INT NOT NULL,
     sts_user VARCHAR(32),
-    showif VARCHAR(32)
+    showif VARCHAR(64)
 );

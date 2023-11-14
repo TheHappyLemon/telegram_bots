@@ -1,0 +1,2 @@
+class DateOutOfBounds(Exception):
+    pass

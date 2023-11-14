@@ -43,8 +43,9 @@ async def calculate_yearly(bot : Bot):
     await send_msg(chat, response)
 
 async def recalculate(bot : Bot):
-    # This function checks if a regular event that needs to be rescheduler, was not and reschedules it.
-    response = await calculate_events([0])
+    # This function checks if a regular event that needs to be rescheduled, was not and reschedules it.
+    # This function also reschedules all continious event if needed
+    response = await calculate_events([0,2])
     if  response > "":
         response = "Daily recalculation result:\n\n" + response
         await send_msg(chat, response)
@@ -69,6 +70,7 @@ async def remind(bot : Bot, to_reschedule : bool):
     for day in days:
         if day['day'] == None:
             continue
+        to_delete = True if day['delIfInPast'] == 'yes' else False
         answ = await check_day(day, to_reschedule, today, tomorrow, week)
         if answ > "":
             if msgs.get(day['id']) == None:
@@ -110,7 +112,9 @@ async def echo(message: types.Message):
             if sts_chat == "EVENTS_ADD_I":
                 querries.append(f"INSERT INTO WEEKDAY_prm (day_id) VALUES({day['id']})")
             elif sts_chat == "EVENTS_ADD_C":
-                querries.append(f"INSERT INTO CONTINIOUSDAY_prm (day_id) VALUES({day['id']})")
+                vToday = await get_today()
+                querries.append(f"INSERT INTO CONTINIOUSDAY_prm (day_id, day_start) VALUES({day['id']}, '{vToday.strftime('''%Y-%m-%d''')}')")
+                querries.append(f"UPDATE DAYS SET day = '{vToday.strftime('''%Y-%m-%d''')}' WHERE id = {day['id']}")
             querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'look', 'days');")
             querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'modify', 'days');")
         elif sts_chat == "MODIFY_DEL":

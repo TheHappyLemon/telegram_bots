@@ -9,16 +9,19 @@ from datetime import datetime, date, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.exceptions import *
+from exceptions import *
+from calendar import monthrange
 import traceback
 
 async def print_events(**kwargs):
     usr_id = kwargs['usr_id']
     days = await get_query(f'''
-        SELECT DAYS.*, USERS.*, WEEKDAY_prm.*
+        SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
         FROM DAYS
         LEFT JOIN link ON DAYS.id = link.id1 AND link.format = 'days' AND link.opt = 'look'
         LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
         LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+        LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
         WHERE link.usr_id = {usr_id}
         ORDER BY DAYS.day;
     ''')
@@ -28,12 +31,18 @@ async def print_events(**kwargs):
         if day['day'] is None:
             day['day'] = default_not_calc
         row = "* " + f"{day['day']}: {day['name']} - {day['descr']}."
-        if day['format'] == '0':
+        if day['format'] == '0' or day['format'] == '2':
             if day['period_am'] != None and day['period'] != None:
                 row = row + f" Repeat every {day['period_am']} {day['period']}."
             else:
                 row = row + f" Don`t repeat."
-        else:
+            if day['format'] == '2':
+                if day['day_start'] == None:
+                    day['day_start'] = default_not_data
+                if day['day_end'] == None:
+                    day['day_end'] = default_not_data
+                row = row + f" From {day['day_start']} until {day['day_end']}."
+        elif day['format'] == '1':
             if day['occurence'] == None:
                 day['occurence'] = default_not_data
             else:
@@ -105,9 +114,11 @@ async def change_date_month(**kwargs):
 
 async def change_date_day(**kwargs):
     usr_id = kwargs['usr_id']
+    dd = monthrange(int(kwargs['yyyy']), int(kwargs['mm']))[1]
     keyboard = InlineKeyboardMarkup()
-    for i in range(1, 32):
-        button = InlineKeyboardButton(text=str(i), callback_data=f'DATE_DAY_CHOOSEN;{i}')
+    dd_today = (await get_today()).day
+    for i in range(1, dd + 1):
+        button = InlineKeyboardButton(text=str(i) + (" Today" if i == dd_today else ""), callback_data=f'DATE_DAY_CHOOSEN;{i}')
         keyboard.add(button)
     button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
     keyboard.add(button)
@@ -141,11 +152,14 @@ async def change_date_date(**kwargs):
                     vDayEnd = await get_infinite_date()
                 print(vDayStart, vDayEnd, (vDayStart > vDayEnd))
                 if vDayStart > vDayEnd:
-                    msg = f"Start date {vDayStart} can not be greater than end date {vDayEnd}"
+                    msg = f"Start date {vDayStart} can not be later than end date {vDayEnd}"
                 elif vDayStart == vDayEnd:
                     msg = f"Start date {vDayStart} can not be equal to end date {vDayEnd}"
                 else:
                     querries.append(f"UPDATE CONTINIOUSDAY_prm SET day_start = '{answ_date}' WHERE day_id = {day_id}")
+                    # by default continious event is repeated every day
+                    querries.append(f"UPDATE DAYS SET period = 'day' WHERE id = {day_id}")
+                    querries.append(f"UPDATE DAYS SET period_am = 1 WHERE id = {day_id}")
                     if vToday < vDayStart:
                         # if period has not started yet, then set day.day to period beginning
                         querries.append(f"UPDATE DAYS SET day = '{answ_date}' WHERE id = {day_id}")
@@ -161,7 +175,7 @@ async def change_date_date(**kwargs):
                 else:
                     vDayStart = await get_tiny_date()
                 if vDayStart > vDayEnd:
-                    msg = f"End date {vDayEnd} can not be smaller than start date {vDayStart}"
+                    msg = f"End date {vDayEnd} can not be earlier than start date {vDayStart}"
                 elif vDayStart == vDayEnd:
                     msg = f"End date {vDayEnd} can not be equal to start date {vDayStart}"
                 elif vToday > vDayEnd:
@@ -228,6 +242,12 @@ async def change_month(**kwargs):
     button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
     keyboard.add(button)
     await edit_message(usr_id, f"Choose new month for event {event_name}", keyboard)
+    return ""
+
+async def change_delIfPast(**kwargs):
+    usr_id = kwargs['usr_id']
+    event_id = kwargs['event_id']
+    await confirm_choice(usr_id, f"yes;{event_id}", 3, 'Event will be deleted after its execution time')
     return ""
 
 async def change_amount(**kwargs):
@@ -546,6 +566,7 @@ async def acces_who(**kwargs):
     ''')
     msg = msg + "\n\nFollowing people listen to this event:\n"
     i = 1
+    msg = await parse_msg(msg)
     for listener in listeners:
         author = await author_link(name = listener['name'], tg_id = listener['tg_id'])
         msg    = msg + f"{i}) {author}\n"
@@ -564,7 +585,6 @@ async def acces_who(**kwargs):
         author = await author_link(name = redactor['name'], tg_id = redactor['tg_id'])
         msg    = msg + f"{i}) {author}\n"
         i = i + 1
-    #msg = await parse_msg(msg=msg)
     keyboard = await get_keyboard(group_id=3, user_id=usr_id)
     await edit_message(usr_id=usr_id, text=msg, reply_markup=keyboard, parse_mode="Markdown")
     return ""
@@ -617,9 +637,6 @@ async def get_help(**kwargs):
     usr_id = kwargs['usr_id']
     keyboard  = await get_back_btn(keyboard_id=0) # 
     await bot.send_document(usr_id, document=open(pdf_help, 'rb'))
-    await bot.send_document(usr_id, document=open('./files/test.txt', 'rb'))
-    # with open(pdf_help, 'rb') as pdf_file:
-       # await bot.send_document(usr_id, pdf_file)
     await edit_message(usr_id, "Here you go!:\n\nHere is a manual 'help.pdf'", keyboard)
 
 async def calc_force(**kwargs):
@@ -686,7 +703,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             queries.append(f"UPDATE USERS SET sts_chat      = 'IDLE'  WHERE tg_id = {usr_id};")
             queries.append(f"UPDATE DAYS  SET period        = '{callback_data[1]}' WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id});")
             await insert_data(queries)
-            await edit_message(usr_id, "Description updated succesfully", keyboard)
+            await edit_message(usr_id, "Period updated succesfully", keyboard)
         elif action_type == "WEEKDAY_CHOOSEN":
             keyboard = await get_keyboard(group_id=2, user_id=usr_id)
             queries.append(f"UPDATE USERS SET sts_chat      = 'IDLE'  WHERE tg_id = {usr_id};")
@@ -721,7 +738,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             mm = '0' + callback_data[1] if len(callback_data[1]) == 1 else callback_data[1]
             queries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + mm}' WHERE tg_id = {usr_id}")
             await insert_data(queries)
-            await change_date_day(usr_id = usr_id)
+            await change_date_day(usr_id = usr_id, yyyy = answ_day, mm = mm)
         elif action_type == "DATE_DAY_CHOOSEN":
             answ_day = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
             answ_day = answ_day[0]['last_input']
@@ -748,12 +765,26 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 group = 7
                 if callback_data[1].lower() == "yes":
                     if user_sts == 'INVITE_PICK_MY_A':
+                        action = 'accepted'
                         msg  = "Invitation was succesfully accepted!"
                         queries.append(f"UPDATE DAYS_invites SET sts = 'accepted' WHERE id = {callback_data[2]}")
                         queries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {callback_data[3]}, '{callback_data[4]}', 'days');")
                     elif user_sts == 'INVITE_PICK_MY_R':
+                        action = 'rejected'
                         queries.append(f"UPDATE DAYS_invites SET sts = 'rejected' WHERE id = {callback_data[2]}")
                         msg  = "Invitation was succesfully rejected!"
+                    # send notification to notification sender
+                    event_answ = await get_query(f"SELECT * FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+                    username   = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
+                    usr_from   = await get_query(f"SELECT usr_from FROM DAYS_invites WHERE id = {callback_data[2]}")
+                    event_answ = event_answ[0]
+                    username   = username[0]['name']
+                    usr_from   = usr_from[0]['usr_from']
+                    notification = await get_day_info(day=event_answ, frmt=0)
+                    notification = f"User {username} has {action} your invitation!\n\n" + notification
+                    print(usr_from)
+                    await send_msg(int(usr_from), notification)
+                    msg = msg + f"\n\nNotification sent to invitation sender"
                 else:
                     msg = "Action aborted!"
             elif user_sts == 'INVITE_PICK':
@@ -819,6 +850,16 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         queries.append(f"DELETE FROM link WHERE usr_id = {usr_id} AND id1 = {callback_data[2]} AND opt = '{callback_data[3]}' AND format = 'days'")
                 else:
                     msg = "Action aborted!"
+            elif user_sts == 'MODIFY_PST':
+                group = 2
+                if callback_data[1].lower() == 'yes':
+                    msg = f"If event is regular and period and period amount are not choosen, it will be deleted after exectuion. Or if event is continious"
+                    msg = msg + " and end date is in past, it will be deleted"
+                    queries.append(f"UPDATE DAYS SET delIfInPast = 'yes' WHERE id = {callback_data[3]}")
+                else:
+                    queries.append(f"UPDATE DAYS SET delIfInPast = 'no' WHERE id = {callback_data[3]}")
+                    msg = f"Event wont be deleted unless you do it by yourself"
+                msg = "Saved!\n\n" + msg
             elif user_sts == 'blah blah':
                 pass
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
@@ -873,6 +914,46 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             keyboard = await get_keyboard(group_id=keyboard_gr[0]['last_keyboard'], user_id=usr_id)
         await edit_message(usr_id, msg, keyboard)
 
+async def send_msg(to : int, msg : str, parse_mode : str = None, disable_web_page_preview : bool = True, reply_markup : InlineKeyboardMarkup = None):
+    # maximum length of a telegram message is 4096 symbols. if msg is too big:
+    # 1 - find last newline in given interval (from <i> to <i + max_len>)
+    # 2 - create chunk from <i> to <\n pos>
+    # 3 - <i> = <\n pos + 1>
+    # repeat until <i> is less than length of a message
+    msg_list = []
+    if len(msg) >= MAX_MESSAGE_LENGTH:
+        i = 0
+        while i < len(msg):
+            left = i
+            right = i + MAX_MESSAGE_LENGTH
+            line = msg[left:right]
+            # this regex searches for the first newline from right side of a string
+            # i got it from chatgpt, because both rfind and find for some reason returned -1 even though
+            # in operator returned True... Super weird, but this works
+            match = re.search(r"\n(?=[^\n]*$)", line)
+            if match:
+                n = match.start() + left # match is in line but i need to get from whole msg
+                line = msg[left:n+1]
+                i = n + 1
+            else:
+                line = msg[left:right]
+                i = right + 1
+            if not(line == "" or line == '\n'):
+                msg_list.append(line)
+    else:
+        msg_list.append(msg)
+    querries = []
+    for i in range(len(msg_list)):
+        # attach keyboard only to last message
+        if i == (len(msg_list) - 1):
+            sent_msg = await bot.send_message(to, msg_list[i], parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview, reply_markup=reply_markup)
+        else:
+            sent_msg = await bot.send_message(to, msg_list[i], parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview)
+        sent_msg_id = sent_msg.message_id
+        query = f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({to}, {sent_msg_id})"
+        querries.append(query)
+    await insert_data(querries)
+    return sent_msg
 
 async def edit_message(usr_id : int, text : str, reply_markup : InlineKeyboardMarkup = None, parse_mode : str = None):
     message_id = await get_query(f"SELECT days_msg_id FROM USERS WHERE tg_id = {usr_id}")
@@ -890,8 +971,18 @@ async def edit_message(usr_id : int, text : str, reply_markup : InlineKeyboardMa
     except MessageNotModified:
         # handle case if user pressed same button again
         pass
+    except BadRequest as e:
+        error_code = e.args[0] if e.args else None
+        if error_code.lower() == 'message_too_long':
+            # IDK why but MessageIsTooLong exception is not being caught
+            await send_msg(to=usr_id, msg=text, parse_mode=parse_mode)
+            sent_msg = await send_msg(to=usr_id, msg="Message was sent in multiple messages, because it is too long", parse_mode=parse_mode, reply_markup=reply_markup)
+            querries = [f"UPDATE USERS SET days_msg_id = {sent_msg.message_id} WHERE tg_id = {usr_id}"]
+            await insert_data(querries)
+        else:
+            traceback.print_exc()
+            await send_msg(usr_id, "An error ocured trying to modify main message:\n\n" + str(e))
     except Exception as e:
-        print(repr(e))
         traceback.print_exc()
         await send_msg(usr_id, "An error ocured trying to modify main message:\n\n" + str(e))
 
@@ -918,9 +1009,16 @@ async def get_keyboard(group_id : int, user_id : int, row_width : int = 2):
     buttons_json = await get_query(query)
     keyboard = InlineKeyboardMarkup(row_width=row_width)
     for button_json in buttons_json:
+        to_disp = True
         if button_json['showif'] != None:
-            if not await globals()[button_json['showif']](usr_id=user_id):
-                continue
+            to_disp = False
+            # if at least one clause is true, then show. showif = first or second or third...
+            for clause in button_json['showif'].split(','):
+                if await globals()[clause](usr_id=user_id):
+                    to_disp = True
+                    break
+        if not to_disp:
+            continue
         data = button_json['func']
         if data == None:
             data = button_json['nextGroup']
@@ -945,42 +1043,7 @@ async def parse_msg(msg: str, slash : bool = True):
         msg = msg.replace(char, '\\' + char)
     return msg
 
-async def send_msg(to : int, msg : str, parse_mode : str = None, disable_web_page_preview : bool = True, reply_markup : InlineKeyboardMarkup = None):
-    # maximum length of a telegram message is 4096 symbols. if msg is too big:
-    # 1 - find last newline in given interval (from <i> to <i + max_len>)
-    # 2 - create chunk from <i> to <\n pos>
-    # 3 - <i> = <\n pos + 1>
-    # repeat until <i> is less than length of a message
-    msg_list = []
-    if len(msg) >= MAX_MESSAGE_LENGTH:
-        i = 0
-        while i < len(msg):
-            left = i
-            right = i + MAX_MESSAGE_LENGTH
-            line = msg[left:right]
-            # this regex searches for the first newline from right side of a string
-            # i got it from chatgpt, because both rfind and find for some reason returned -1 even though
-            # in operator returned True... Super weird, but this works
-            match = re.search(r"\n(?=[^\n]*$)", line)
-            if match:
-                n = match.start() + left # match is in line but i need to get from whole msg
-            else:
-                n = -1
-            if n != -1:
-                line = msg[left:n+1]
-                i = n + 1
-            msg_list.append(line)
-    else:
-        msg_list.append(msg)
-    querries = []
-    for chunk in msg_list:
-        if not(chunk == "" or chunk == '\n'):
-            sent_msg = await bot.send_message(to, chunk, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview, reply_markup=reply_markup)
-            sent_msg_id = sent_msg.message_id
-            query = f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({to}, {sent_msg_id})"
-            querries.append(query)
-    await insert_data(querries)
-    return sent_msg
+
 
 async def handle_user(message : types.Message):
     tg_id  = message.from_user.id
@@ -1078,8 +1141,9 @@ async def get_tiny_date():
 async def reschedule(day : dict) -> None:
     if day["period"] == None or int(day["period_am"]) == None:
         # if these fields are not provided event does not need to be rescheduled
-        await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
-        return
+        if day['delIfInPast'] == "yes" and day['format'] == '0':
+            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
+            return
     vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
     period = day["period"]
     amount = int(day["period_am"])
@@ -1094,7 +1158,12 @@ async def reschedule(day : dict) -> None:
     elif period == "day":
         vDate = vDate + timedelta(days=1)
     elif period == "month":
-        vDate = await add_months(vDate, 1)   
+        vDate = await add_months(vDate, 1)
+    if day['format'] == '2':
+            if day['day_end'] != None:
+                day['day_end'] = datetime.strptime(day['day_end'], "%Y-%m-%d").date()
+                if vDate > day['day_end']:
+                    raise DateOutOfBounds(f"Calculated date is {vDate} while end date is {day['day_end']}")
     querris = []
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
@@ -1172,20 +1241,27 @@ async def calculate_events(formats : list, ids : list = []):
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
                 continue
-            if day['day_start'] == None or day['day_end'] == None:
-                continue
-            row = "* Event " + f"{day['descr']} "
-            vDate  = day['day']
-            vStart = datetime.strptime(day['day_start'], "%Y-%m-%d").date() 
-            vEnd   = datetime.strptime(day['day_end'], "%Y-%m-%d").date() 
-            if vDate == None:
-                vDate = vToday
-            if vDate < vStart:
-                vRes = vStart
-            row = row + f" is scheduled on {v_date}\n\n"
-            response = response + row
-    if len(queris) > 0:
-        await insert_data(queris)
+            vToday = await get_today()
+            vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
+            vStart = day['day_start']
+            vEnd = day['day_end']
+            if vStart == None:
+                vStart = await get_tiny_date()
+            if vEnd == None:
+                vEnd = await get_infinite_date()
+            vStart = datetime.strptime(day['day_start'], "%Y-%m-%d").date()
+            vEnd = datetime.strptime(day['day_end'], "%Y-%m-%d").date()
+            # IF today is in period -> reschedule to next
+            if vToday > vStart and vToday <= vEnd:
+                queris.append(f'''UPDATE DAYS SET day = '{vToday.strftime("%Y-%m-%d")}' WHERE id = {day['id']}''')
+                try:
+                    reschedule(day)
+                except DateOutOfBounds:
+                    if day['delIfInPast'] == "yes":
+                        queris.append(f"DELETE FROM DAYS WHERE id = {day['id']}")
+            elif vToday > vEnd and day['delIfInPast'] == "yes":
+                queris.append(f"DELETE FROM DAYS WHERE id = {day['id']}")
+    await insert_data(queris)
     return response
 
 
