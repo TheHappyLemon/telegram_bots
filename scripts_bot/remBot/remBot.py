@@ -125,6 +125,10 @@ async def echo(message: types.Message):
             else:
                 msg = "Event NOT deleted"
                 keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+        elif sts_chat == "MODIFY_E_NM":
+            querries.append(f"UPDATE DAYS SET name = '{input}' WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+            keyboard = await get_keyboard(group_id=2, user_id = usr_id)
+            msg = "Name updated succesfully"
         elif sts_chat == "MODIFY_DESC":
             querries.append(f"UPDATE DAYS SET descr = '{input}' WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
             keyboard = await get_keyboard(group_id=2, user_id = usr_id)

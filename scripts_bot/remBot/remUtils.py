@@ -150,7 +150,6 @@ async def change_date_date(**kwargs):
                     vDayEnd = datetime.strptime(vDayEnd, "%Y-%m-%d").date()
                 else:
                     vDayEnd = await get_infinite_date()
-                print(vDayStart, vDayEnd, (vDayStart > vDayEnd))
                 if vDayStart > vDayEnd:
                     msg = f"Start date {vDayStart} can not be later than end date {vDayEnd}"
                 elif vDayStart == vDayEnd:
@@ -185,6 +184,13 @@ async def change_date_date(**kwargs):
     await insert_data(querries)
     await edit_message(usr_id, msg, keyboard)
     await delete_all_messages(usr_id)
+
+async def change_evnt_name(**kwargs):
+    usr_id = kwargs['usr_id']
+    event_name = kwargs['event_name']
+    reply_markup = await get_back_btn(keyboard_id=2)
+    await edit_message(usr_id, f"Enter new name for event {event_name}", reply_markup)
+    return ""
 
 async def change_desc(**kwargs):
     usr_id = kwargs['usr_id']
@@ -792,7 +798,6 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     usr_from   = usr_from[0]['usr_from']
                     notification = await get_day_info(day=event_answ, frmt=0)
                     notification = f"User {username} has {action} your invitation!\n\n" + notification
-                    print(usr_from)
                     await send_msg(int(usr_from), notification)
                     msg = msg + f"\n\nNotification sent to invitation sender"
                 else:
