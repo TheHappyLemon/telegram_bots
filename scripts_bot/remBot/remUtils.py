@@ -700,6 +700,16 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             await confirm_choice(usr_id, callback_data[1], 3)
         elif action_type == "PERIOD_CHOOSEN":
             keyboard = await get_keyboard(group_id=2, user_id=usr_id)
+            day_data = await get_query(f"SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+            if len(day_data) > 0:
+                day_data = day_data[0]
+                if day_data["period_am"] != None:
+                    try:
+                        day_data['day'] = await get_new_date(datetime.strptime(day_data['day'], "%Y-%m-%d").date(), callback_data[1], int(day_data["period_am"]))
+                        await check_period(day_data['day'], day_data['day_start'], day_data['day_end'])
+                    except DateOutOfBounds as e:
+                        await edit_message(usr_id, "Can not update period, because:\n\n" + str(e), keyboard)
+                        return
             queries.append(f"UPDATE USERS SET sts_chat      = 'IDLE'  WHERE tg_id = {usr_id};")
             queries.append(f"UPDATE DAYS  SET period        = '{callback_data[1]}' WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id});")
             await insert_data(queries)
@@ -1147,23 +1157,9 @@ async def reschedule(day : dict) -> None:
     vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
     period = day["period"]
     amount = int(day["period_am"])
-    if period == "year":
-        try:
-            vDate = vDate.replace(year = vDate.year + amount)
-        except ValueError:
-            # exception for 'visokosniy' year (29 february transfers to 1 march)
-            vDate = vDate + (date(vDate.year + amount, 1, 1) - date(vDate.year, 1, 1))
-    elif period == "week":
-        vDate = vDate + timedelta(days=7)
-    elif period == "day":
-        vDate = vDate + timedelta(days=1)
-    elif period == "month":
-        vDate = await add_months(vDate, 1)
+    vDate = await get_new_date(vDate, period, amount)
     if day['format'] == '2':
-            if day['day_end'] != None:
-                day['day_end'] = datetime.strptime(day['day_end'], "%Y-%m-%d").date()
-                if vDate > day['day_end']:
-                    raise DateOutOfBounds(f"Calculated date is {vDate} while end date is {day['day_end']}")
+        await check_period(vDate, day['day_start'], day['day_end'])
     querris = []
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
@@ -1241,6 +1237,8 @@ async def calculate_events(formats : list, ids : list = []):
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
                 continue
+            if day['day'] == None:
+                continue
             vToday = await get_today()
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             vStart = day['day_start']
@@ -1287,6 +1285,30 @@ async def get_feedback_text(sts : str, answer : str = ""):
     elif sts == '2':
         return 'answered', "\nAnswer: " + answer
     return "Unknown status...", ""
+
+async def check_period(date : date, day_start : str, day_end : str):
+    if day_start == None:
+        return
+    if day_end != None:
+        day_end = datetime.strptime(day_end, "%Y-%m-%d").date()
+        if date > day_end:
+            raise DateOutOfBounds(f"Calculated date is {date} while end date is {day_end}")
+
+async def get_new_date(iDate : date, period : str, amount : int):
+    if period == "year":
+        try:
+            iDate = iDate.replace(year = iDate.year + amount)
+        except ValueError:
+            # exception for 'visokosniy' year (29 february transfers to 1 march)
+            iDate = iDate + (date(iDate.year + amount, 1, 1) - date(iDate.year, 1, 1))
+    elif period == "week":
+        iDate = iDate + timedelta(days=(7 * amount))
+    elif period == "day":
+        iDate = iDate + timedelta(days=(1 * amount))
+    elif period == "month":
+        # why do I use this insted of timedelta?
+        iDate = await add_months(iDate, amount)
+    return iDate
 
 def find_day_in_month(year, month, day_of_week, occurrence):
     # day_of_week = [0, 1, 2, 3, 4, 5, 6]

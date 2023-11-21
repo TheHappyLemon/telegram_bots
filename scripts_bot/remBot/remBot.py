@@ -133,10 +133,18 @@ async def echo(message: types.Message):
             keyboard = await get_keyboard(group_id=2, user_id = usr_id)
             try:
                 int(input)
+                day_data = await get_query(f"SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+                if len(day_data) > 0:
+                    day_data = day_data[0]
+                    if day_data["period"] != None:
+                        day_data['day'] = await get_new_date(datetime.strptime(day_data['day'], "%Y-%m-%d").date(), day_data["period"], int(input))
+                        await check_period(day_data['day'], day_data['day_start'], day_data['day_end'])
                 querries.append(f"UPDATE DAYS SET period_am = {input} WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
                 msg = "Period amount updated succesfully"
             except ValueError:
                 msg = "Whooops an error ocured:\n\n" + "Period amount should be an integer!"
+            except DateOutOfBounds as e:
+                msg = "Can not set new period amount, because\n\n" + str(e)
             except Exception as e:
                 msg = "Whooops an error ocured:\n\n" + str(e)
         elif sts_chat == 'INVITE_SEND_LOOK' or sts_chat == 'INVITE_SEND_MODF':
