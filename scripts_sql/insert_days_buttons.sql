@@ -47,8 +47,8 @@ INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id,
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(33, 'Answer to'   , 'pick_feedback_adm', 6, NULL, 1, 7, 10, 'FEEDBACK_ANSW');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(34, 'Ban user'    , 'ban_user'         , 6, NULL, 2, 7, 10, 'BAN_USER');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(57, 'Jobs'        , 'print_jobs'       , 6, NULL, 3, 7, 10, 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(58, 'Recalculate', 'calc_force'       , 6, NULL, 4, 7, 10, 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(35, 'Back'        , NULL               , 6, 0   , 4, 7, 10, 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(58, 'Recalculate', 'calc_force'        , 6, NULL, 4, 7, 10, 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(35, 'Back'        , NULL               , 6, 0   , 5, 7, 10, 'IDLE');
 --   ADMIN KEYBOARD                                                                                         id   text               func                group next ord prnt accs 
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(44, 'Print invitations', 'print_invitations_my', 7, NULL, 0, 43, 0, 'IDLE');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(45, 'Accept invitation', 'pick_invitation_my'  , 7, NULL, 1, 43, 0, 'INVITE_PICK_MY_A');
