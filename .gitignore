@@ -14,10 +14,14 @@ scripts_bot/jobs.txt
 .sudo_as_admin_successful
 pyenv/
 /photos
+bots/SpotifyBot/report.xml
+*log.txt
 # TOKENS
 *constants.py
+*Constants.py
 # VENVs
-bots/*Env*
+bots/GroupBot/GroupEnv/*
+bots/SpotifyBot/SpotifyEnv/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
