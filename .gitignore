@@ -15,8 +15,9 @@ scripts_bot/jobs.txt
 pyenv/
 /photos
 # TOKENS
-scripts_bot/constants.py
-scripts_bot/remBot/remConstants.py
+*constants.py
+# VENVs
+bots/*Env*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
