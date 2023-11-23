@@ -1,6 +1,9 @@
 import logging
 import calendar
 import re
+import glob
+import os
+import subprocess
 
 from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, types
@@ -12,6 +15,44 @@ from aiogram.utils.exceptions import *
 from exceptions import *
 from calendar import monthrange
 import traceback
+
+async def get_day_row_info(day : dict):
+    if day['day'] is None:
+        day['day'] = default_not_calc
+    row = "* " + f"{day['day']}: {day['name']} - {day['descr']}."
+    if day['format'] == '0' or day['format'] == '2':
+        if day['period_am'] != None and day['period'] != None:
+            row = row + f" Repeat every {day['period_am']} {day['period']}."
+        else:
+            row = row + f" Don`t repeat."
+        if day['format'] == '2':
+            if day['day_start'] == None:
+                day['day_start'] = default_not_data
+            if day['day_end'] == None:
+                day['day_end'] = default_not_data
+            row = row + f" From {day['day_start']} until {day['day_end']}."
+    elif day['format'] == '1':
+        if day['occurence'] == None:
+            day['occurence'] = default_not_data
+        else:
+            day['occurence'] = occurrences[int(day['occurence'])]
+        if day['weekday'] == None:  
+            day['weekday'] = default_not_data
+        else:
+            day['weekday'] = weekdays[int(day['weekday'])]
+
+        if day['month'] == None:
+            day['month'] = default_not_data
+        else:
+            day['month'] = months[int(day['month'])]
+        row = row + f" Occurs on every {day['occurence']} {day['weekday']} of {day['month']}"
+    if day['name'] != None:
+        author = f"[{day['USERS.name']}](tg://user?id={day['tg_id']})"
+    else:
+        author = 'UNKNOWN'
+    row = await parse_msg(row)
+    row = row + f" id = {day['id']}, author = {author}"
+    return row
 
 async def print_events(**kwargs):
     usr_id = kwargs['usr_id']
@@ -28,45 +69,28 @@ async def print_events(**kwargs):
     #days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id ORDER BY day;")
     msg = f"There are {len(days)} events:\n\n"
     for day in days:
-        if day['day'] is None:
-            day['day'] = default_not_calc
-        row = "* " + f"{day['day']}: {day['name']} - {day['descr']}."
-        if day['format'] == '0' or day['format'] == '2':
-            if day['period_am'] != None and day['period'] != None:
-                row = row + f" Repeat every {day['period_am']} {day['period']}."
-            else:
-                row = row + f" Don`t repeat."
-            if day['format'] == '2':
-                if day['day_start'] == None:
-                    day['day_start'] = default_not_data
-                if day['day_end'] == None:
-                    day['day_end'] = default_not_data
-                row = row + f" From {day['day_start']} until {day['day_end']}."
-        elif day['format'] == '1':
-            if day['occurence'] == None:
-                day['occurence'] = default_not_data
-            else:
-                day['occurence'] = occurrences[int(day['occurence'])]
-            if day['weekday'] == None:  
-                day['weekday'] = default_not_data
-            else:
-                day['weekday'] = weekdays[int(day['weekday'])]
-
-            if day['month'] == None:
-                day['month'] = default_not_data
-            else:
-                day['month'] = months[int(day['month'])]
-            row = row + f" Occurs on every {day['occurence']} {day['weekday']} of {day['month']}"
-        if day['name'] != None:
-            author = f"[{day['USERS.name']}](tg://user?id={day['tg_id']})"
-        else:
-            author = 'UNKNOWN'
-        row = await parse_msg(row)
-        row = row + f" id = {day['id']}, author = {author}"
+        row = await get_day_row_info(day)
         msg = msg + row + "\n\n"
     reply_markup = await get_back_btn(keyboard_id=1)
     await edit_message(usr_id, msg, reply_markup, "Markdown")
     return ""
+
+async def print_event(**kwargs):
+    usr_id = kwargs['usr_id']
+    day = await get_query(f'''
+        SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+        FROM DAYS
+        LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+        LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+        LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+        WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})
+        ORDER BY DAYS.day;
+    ''')
+    print(day)
+    row = await get_day_row_info(day[0])
+    print(row)
+    reply_markup = await get_back_btn(keyboard_id=2)
+    await edit_message(usr_id, row, reply_markup, "Markdown")
 
 async def get_back_btn(keyboard_id : int):
     keyboard =InlineKeyboardMarkup()
@@ -77,7 +101,7 @@ async def get_back_btn(keyboard_id : int):
 async def add_event(**kwargs):
     usr_id = kwargs['usr_id']
     type   = kwargs['type']
-    reply_markup = await get_back_btn(keyboard_id=1)
+    reply_markup = await get_back_btn(keyboard_id=9)
     await edit_message(usr_id, f"Enter new {type} event name", reply_markup)
     return ""
 
@@ -639,11 +663,33 @@ async def pick_event(usr_id : int, opt : str):
     await edit_message(usr_id, msg, keyboard)
     return ""
 
+async def make_backup(**kwargs):
+    usr_id = kwargs['usr_id']
+    keyboard  = await get_back_btn(keyboard_id=6)
+    if usr_id != int(chat):
+        await edit_message(usr_id, "Only for head chief admin!", keyboard)
+        return
+    # Popen is non blocking process
+    subprocess.Popen(['bash', backup_script])
+    await edit_message(usr_id, 'Backup is being created asynchronously!', keyboard)
+
+async def get_backup(**kwargs):
+    usr_id = kwargs['usr_id']
+    keyboard  = await get_back_btn(keyboard_id=6)
+    if usr_id != int(chat):
+        await edit_message(usr_id, "Only for head chief admin!", keyboard)
+        return
+    list_of_files = glob.glob(backups_folder)
+    if list_of_files == []:
+        await edit_message(usr_id, "No backups found...", keyboard)
+        return
+    latest_file = max(list_of_files, key=os.path.getctime)
+    await send_file(usr_id, latest_file, "Here you go!\n\nHere is the latest database backup", keyboard)
+
 async def get_help(**kwargs):
     usr_id = kwargs['usr_id']
-    keyboard  = await get_back_btn(keyboard_id=0) # 
-    await bot.send_document(usr_id, document=open(pdf_help, 'rb'))
-    await edit_message(usr_id, "Here you go!:\n\nHere is a manual 'help.pdf'", keyboard)
+    keyboard  = await get_back_btn(keyboard_id=0)
+    await send_file(usr_id, pdf_help, "Here you go!:\n\nHere is a manual 'help.pdf'", keyboard)
 
 async def calc_force(**kwargs):
     usr_id = kwargs['usr_id']
@@ -1006,6 +1052,12 @@ async def send_new_static_msg(usr_id : int, msg : str, reply_markup : InlineKeyb
     message_id = sent_message.message_id
     await insert_data([f"UPDATE USERS SET days_msg_id = {message_id} WHERE tg_id = {usr_id}"])
     return message_id
+
+async def send_file(usr_id : int, path : str, label : str, keyboard : InlineKeyboardMarkup):
+    message = await bot.send_document(usr_id, document=open(path, 'rb'))
+    await edit_message(usr_id, label, keyboard)
+    queries = [f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({usr_id}, {message.message_id})"]
+    await insert_data(queries)
 
 # MAIN
 logging.basicConfig(level=logging.INFO)

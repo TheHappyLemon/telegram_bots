@@ -22,6 +22,10 @@ bots/SpotifyBot/report.xml
 # VENVs
 bots/GroupBot/GroupEnv/*
 bots/SpotifyBot/SpotifyEnv/*
+# Backups
+bash/db_config.sh
+backups/*
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
