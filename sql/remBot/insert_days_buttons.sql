@@ -6,17 +6,19 @@ INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id,
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(59, 'Help'          ,  'get_help'     , 0, NULL, 4, NULL, 0 , 'IDLE');
 --   EVNT KEYBOARD                                                                               id   text         func                           group next ord prnt  accs
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(2  , 'Print events'   , 'print_events'   , 1, NULL, 0, 1   , 0, 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(67 , 'Create event'   ,  NULL            , 1, 9   , 1, NULL, 0, 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(5  , 'Modify data'    , 'pick_event_mod' , 1, NULL, 2, 1   , 0, 'EVENTS_PICK_D');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(6  , 'Modify acces'   , 'pick_event_mod' , 1, NULL, 3, 1   , 0, 'EVENTS_PICK_A');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(55 , 'Unsubscribe'    , 'pick_event_look', 1, NULL, 4, 1   , 0, 'EVENTS_PICK_U');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(56 , 'Stop redacting' , 'pick_event_mod' , 1, NULL, 5, 1   , 0, 'EVENTS_PICK_R');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(22 , 'Back'           , NULL             , 1, 0   , 6, 1   , 0, 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(71 , 'Export to CSV'  , 'export_to_csv'  , 1, NULL, 1, 1   , 0, 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(67 , 'Create event'   ,  NULL            , 1, 9   , 2, NULL, 0, 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(5  , 'Modify data'    , 'pick_event_mod' , 1, NULL, 3, 1   , 0, 'EVENTS_PICK_D');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(6  , 'Modify acces'   , 'pick_event_mod' , 1, NULL, 4, 1   , 0, 'EVENTS_PICK_A');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(55 , 'Unsubscribe'    , 'pick_event_look', 1, NULL, 5, 1   , 0, 'EVENTS_PICK_U');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(56 , 'Stop redacting' , 'pick_event_mod' , 1, NULL, 6, 1   , 0, 'EVENTS_PICK_R');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(22 , 'Back'           , NULL             , 1, 0   , 7, 1   , 0, 'IDLE');
 --   CREATE EVENT KEYBOARD                                                                                  id   text                func         group  nxt ord prnt  accs
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(3 , 'Add Regular'    , 'add_regular'    , 9, NULL, 1, 1, 0, 'EVENTS_ADD_R');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(4 , 'Add Irregular'  , 'add_irregular'  , 9, NULL, 2, 1, 0, 'EVENTS_ADD_I');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(60, 'Add Continious' , 'add_continious' , 9, NULL, 3, 1, 0, 'EVENTS_ADD_C'); 
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(68, 'Back'           , NULL             , 9, 1   , 4, 1, 0, 'IDLE');  
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(60, 'Add Continious' , 'add_continious' , 9, NULL, 3, 1, 0, 'EVENTS_ADD_C');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(70, 'Import from CSV', 'add_from_csv'   , 9, NULL, 4, 1, 0, 'EVENTS_ADD_CSV');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(68, 'Back'           , NULL             , 9, 1   , 5, 1, 0, 'IDLE');  
 -- MODIFY KEYBOARD                                                                                                 id   text                        func          group next ord prnt accs
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user)         VALUES(8 , 'Delete'                , 'delete_event'    , 2, NULL, 0,  5, 0, 'MODIFY_DEL'                       );
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user)         VALUES(69, 'Print event'           , 'print_event'     , 2, NULL, 2,  5, 0, 'IDLE'                             );

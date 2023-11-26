@@ -25,7 +25,8 @@ bots/SpotifyBot/SpotifyEnv/*
 # Backups
 bash/db_config.sh
 backups/*
-
+# csv export import
+bots/ReminderBot/csv/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

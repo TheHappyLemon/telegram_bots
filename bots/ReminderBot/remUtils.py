@@ -4,6 +4,7 @@ import re
 import glob
 import os
 import subprocess
+import csv
 
 from MySQLdb import _mysql
 from aiogram import Bot, Dispatcher, types
@@ -15,6 +16,300 @@ from aiogram.utils.exceptions import *
 from exceptions import *
 from calendar import monthrange
 import traceback
+
+async def export_to_csv(**kwargs):
+    usr_id = kwargs['usr_id']
+    usr_name = kwargs['usr_name']
+    days = await get_query(f'''
+        SELECT DAYS.name AS 'event name', DAYS.day AS 'date', DAYS.descr AS 'description', USERS.name AS 'creator', DAYS.acces, DAYS.delIfInPast AS 'Delete after execution',
+        DAYS.format AS type, DAYS.period, DAYS.period_am AS 'period amount', WEEKDAY_prm.weekday, WEEKDAY_prm.occurence, WEEKDAY_prm.month, CONTINIOUSDAY_prm.day_start AS 'start date',
+        CONTINIOUSDAY_prm.day_end  AS 'end date'
+        FROM DAYS
+        LEFT JOIN link ON DAYS.id = link.id1 AND link.format = 'days' AND link.opt = 'look'
+        LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+        LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+        LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+        WHERE link.usr_id = {usr_id}
+        ORDER BY DAYS.day;
+    ''')
+    reply_markup = await get_back_btn(keyboard_id=1)
+    path = f"{path_csv}/{usr_name}_export.csv"
+    f = open(path, 'w', encoding='utf-8-sig')
+    csv_writer = csv.DictWriter(f, fieldnames=await get_csv_header())
+    csv_writer.writeheader()
+    for day in days:
+        if day['type'] == '0':
+            day['type'] = 'regular'
+        elif day['type'] == '1':
+            day['type'] = 'irregular'
+            day = await format_irregular(day)
+        elif day['type'] == '2':
+            day['type'] = 'continious'
+    csv_writer.writerows(days)
+    f.flush()
+    f.close()
+    await send_file(usr_id, path, "Here are your events transformed into csv!", reply_markup)
+
+async def add_from_csv(**kwargs):
+    usr_id = kwargs['usr_id']
+    reply_markup = await get_back_btn(keyboard_id=9)
+    await edit_message(usr_id, "Please provide me your csv file", reply_markup)
+
+async def get_csv_header():
+    # name;day;descr;who;acces;delifinpast;format;period;period_am;weekday;occurence;month;day_start;day_end;
+    return ["event name","date","description","creator","acces","Delete after execution","type","period","period amount","weekday","occurence","month","start date","end date"]
+
+async def process_csv(usr_id : int, path : str):
+    f = open(path, 'r', encoding='utf-8')
+    reader = csv.DictReader(f)
+    csv_headers = await get_csv_header()
+    reader.fieldnames = [header.lower().strip() for header in reader.fieldnames]
+    import_headers = reader.fieldnames
+    keyboard = await get_back_btn(keyboard_id=9)
+    # Check column amount in csv
+    if len(csv_headers) != len(import_headers):
+        msg = f"Do not change columns! Your csv has {len(import_headers)} columns, while it should have exactly {len(csv_headers)} columns:\n\n"
+        for header in csv_headers:
+            msg = msg + header + ", "
+        msg = msg.strip().strip(',')
+        await edit_message(usr_id, msg, keyboard)
+        return
+    # Check if all columns have good names
+    errors = []
+    for i in range(len(csv_headers)):
+        if csv_headers[i].lower() != import_headers[i]:
+            errors.append(f"* {import_headers[i]} should be {csv_headers[i]} instead\n")
+    if len(errors) > 0:
+        msg = f"Do not change column names! Column names should be in the same order when you export them. You have following erros:\n\n"
+        for err in errors:
+            msg = msg + err
+        await edit_message(usr_id, msg, keyboard)
+        return
+    flg_err = False
+    flg_wrn = False
+    querries = []
+    errors = {}
+    warnings = {}
+    i = 2
+    for row in reader:
+        errors[i] = []
+        warnings[i] = []
+        # format data...
+        vDescr       = await escape_mysql(row['description'].lower().strip())
+        vName        = await escape_mysql(row['event name'].lower().strip())
+        vDate        = row['date'].lower().strip()
+        vType        = row['type'].lower().strip()
+        vAcces       = row['acces'].lower().strip()
+        vPeriod      = row['period'].lower().strip()
+        vPeriodAm    = row['period amount'].lower().strip()
+        vWeekday     = row['weekday'].lower().strip()
+        vOccurence   = row['occurence'].lower().strip()
+        vMonth       = row['month'].lower().strip().capitalize()
+        vDayStart    = row['start date'].lower().strip()
+        vDayEnd      = row['end date'].lower().strip()
+        vDelIfInPast = row['delete after execution'].lower().strip()
+        # check event type
+        if vType == 'regular':
+            vType = '0'
+        elif vType == 'irregular':
+            vType = '1'
+        elif vType == 'continious':
+            vType = '2'
+        else:
+            errors[i].append("Unknown event type. Only 'regular', 'irregular' or 'continious' allowed")
+        # check if name is available for this author
+        if vName > "":
+            name_exists = await get_query(f"SELECT * FROM DAYS WHERE who = {usr_id} AND name = '{vName}'")
+            if len(name_exists) != 0:
+                errors[i].append(f"You have already created event named {vName}")
+        else:
+            errors[i].append(f"Event name not provided")
+        if vDescr == "":
+            vDescr = "NULL"
+            warnings[i].append("Description is empty")
+        # check if valid date is provided
+        # check only for regular events, because for irregular it ll be calculated later
+        # and for continious events date should be today
+        if vDate > "":
+            if vType == "0":
+                try:
+                    datetime.strptime(f"{row['date']}", "%Y-%m-%d").date()
+                except ValueError as e:
+                    errors[i].append(f"Date {row['date']} is not a valid date '{str(e)}'")
+            elif vType == "1":
+                warnings[i].append("Date should not be provided for irregular events. It will be ignored")
+            elif vType == "2":
+                warnings[i].append("Date should not be provided for continious events. It will be ignored and set to date start if it is provided")
+        elif vType == "0":
+            vDate = "NULL"
+            warnings[i].append("Date not provided")
+        # skip creator
+        # check acces
+        if vAcces > "":
+            if not vAcces in ['private', 'public']:
+                errors[i].append("Unknown acces, only 'private' or 'public' allowed")
+        else:
+            vAcces = "private"
+            warnings[i].append("Access is empty. By default event will be private")
+        # check delifinpast
+        if vDelIfInPast > "":
+            if not vDelIfInPast in ['yes', 'no']:
+                errors[i].append("Unknown 'delete after execution' option, only 'yes' or 'no' allowed")
+        else:
+            vDelIfInPast = "yes"
+            warnings[i].append("'delete after execution' is empty. By default 'yes' is set")
+        if vPeriod > "":
+            if vType in ['0','2']:
+                if vPeriod not in periods:
+                    msg = "Unknown period option, only "
+                    for vPeriod in periods:
+                        msg = msg + f"'{vPeriod}',"
+                    msg = msg.strip(',') + " are allowed"
+                    errors[i].append(msg)
+            elif vType == "1":
+                warnings[i].append("Period should not be provided for irregular events. It will be ignored")
+        elif vType in ['0','2']:
+            vPeriod = "NULL"
+            warnings[i].append("Period is empty")
+        if vPeriodAm > "":
+            if vType in ['0','2']:
+                try:
+                    if int(vPeriodAm) <= 0:
+                        errors[i].append("Period amount should be a positive integer")
+                except ValueError:
+                    errors[i].append("Period amount should be an integer")
+            elif vType == '1':
+                warnings[i].append("Period amount should not be provided for irregular events. It will be ignored")
+        elif vType in ['0','2']:
+            vPeriodAm = "NULL"
+            warnings[i].append("Period amount is empty")
+        # weekday is only for irregular event
+        if vWeekday > "":
+            if vType == '1':
+                if not vWeekday in weekdays.values():
+                    msg = "Unknown weekday option, only "
+                    for vOption in weekdays.values():
+                        msg = msg + f"'{vOption}',"
+                    msg = msg.strip(',') + " are allowed"
+                    errors[i].append(msg)
+                else:
+                    # get key by value
+                    vWeekday = list(weekdays.keys())[list(weekdays.values()).index(vWeekday)]
+            else:
+                warnings[i].append("Weekday should only be provided for irregular events. It will be ignored")
+        elif vType == '1':
+            vWeekday = "NULL"
+            warnings[i].append("Weekday is empty")
+        # Occurence is only for irregular event
+        if vOccurence > "":
+            if vType == '1':
+                if not vOccurence in occurrences.values():
+                    msg = "Unknown occurence option, only "
+                    for vOption in occurrences.values():
+                        msg = msg + f"'{vOption}',"
+                    msg = msg.strip(',') + " are allowed"
+                    errors[i].append(msg)
+                else:
+                    # get key by value
+                    vOccurence = list(occurrences.keys())[list(occurrences.values()).index(vOccurence)]
+            else:
+                warnings[i].append("Occurence should only be provided for irregular events. It will be ignored")
+        elif vType == '1':
+            vOccurence = "NULL"
+            warnings[i].append("Occurence is empty")
+        # Month is only for irregular event
+        if vMonth > "":
+            if vType == '1':
+                if not vMonth in months.values():
+                    msg = "Unknown month option, only "
+                    for vOption in months.values():
+                        msg = msg + f"'{vOption}',"
+                    msg = msg.strip(',') + " are allowed"
+                    errors[i].append(msg)
+                else:
+                    # get key by value
+                    print(list(months.values()))
+                    vMonth = list(months.keys())[list(months.values()).index(vMonth)]
+            else:
+                warnings[i].append("Month should only be provided for irregular events. It will be ignored")
+        elif vType == '1':
+            vMonth = "NULL"
+            warnings[i].append("Month is empty")
+        # Start date is only for continious events
+        if vDayStart > "":
+            if vType == '2':
+                try:
+                    vDayStart = datetime.strptime(vDayStart, "%Y-%m-%d").date()
+                    vDate = vDayStart
+                except ValueError:
+                    errors[i].append(f"Start date {vDayStart} is not a valid date")
+            else:
+                warnings[i].append("Date start should only be provided for continious events. It will be ignored")
+        elif vType == '2':
+            vDayStart = await get_today()
+            vDate = vDayStart
+            warnings[i].append("Start date is empty. By default today will be used")
+        # End date is only for continious events
+        if vDayEnd > "":
+            if vType == '2':
+                try:
+                    vDayEnd = datetime.strptime(vDayEnd, "%Y-%m-%d").date()
+                    if vDayStart > vDayEnd:
+                        errors[i].append(f"End date {vDayEnd} is earlier than start date {vDayStart}")
+                except ValueError:
+                    errors[i].append(f"End date {vDayEnd} is not a valid date")
+            else:
+                warnings[i].append("Date end should only be provided for continious events. It will be ignored")
+        elif vType == '2':
+            warnings[i].append("End date is empty. Event will be repeated forever")
+        # TODO escape fields for sql
+        if len(errors[i]) == 0:
+            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES('{vDate}', '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}')")
+            await insert_data(querries)
+            querries.clear()
+            day = await get_query(f"SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id}")
+            day = day[0]
+            querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'look', 'days');")
+            querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'modify', 'days');")
+        else:
+            flg_err = True
+        if len(warnings[i]) != 0:
+            flg_wrn = True
+    msg = ""
+    if flg_err:
+        i = 1
+        for key in errors:
+            if len(errors[key]) == 0:
+                continue
+            i = i + 1
+            j = 1
+            row = f"Line Nr {i}:\n\n"
+            for err_txt in errors[key]:
+                row = f"\t{j}) {err_txt}\n"
+            msg = msg + row
+        msg = f"You have errors in {i} rows:\n" + msg 
+    if flg_wrn:
+        i = 1
+        if msg > "":
+            msg = msg + "\n\nAnd"
+        for key in warnings:
+            if len(warnings[key]) == 0:
+                continue
+            i = i + 1
+            j = 1
+            row = ""
+            for wrn_txt in warnings[key]:
+                row = f"\t{j}) {wrn_txt}\n"
+            msg = msg + row
+        msg = msg + f"You have warnings in {i} rows:\n" + msg
+    if msg > "":
+        msg = msg + "\n\nImport them anyway?"
+    else:
+        msg = "No errors found. Import events?"
+    await edit_message(usr_id, msg)
+    f = input("import?")
+    if f == 'yes':
+        await insert_data(querries)
 
 async def get_day_row_info(day : dict):
     if day['day'] is None:
@@ -32,19 +327,7 @@ async def get_day_row_info(day : dict):
                 day['day_end'] = default_not_data
             row = row + f" From {day['day_start']} until {day['day_end']}."
     elif day['format'] == '1':
-        if day['occurence'] == None:
-            day['occurence'] = default_not_data
-        else:
-            day['occurence'] = occurrences[int(day['occurence'])]
-        if day['weekday'] == None:  
-            day['weekday'] = default_not_data
-        else:
-            day['weekday'] = weekdays[int(day['weekday'])]
-
-        if day['month'] == None:
-            day['month'] = default_not_data
-        else:
-            day['month'] = months[int(day['month'])]
+        day = await format_irregular(day)
         row = row + f" Occurs on every {day['occurence']} {day['weekday']} of {day['month']}"
     if day['name'] != None:
         author = f"[{day['USERS.name']}](tg://user?id={day['tg_id']})"
@@ -66,7 +349,6 @@ async def print_events(**kwargs):
         WHERE link.usr_id = {usr_id}
         ORDER BY DAYS.day;
     ''')
-    #days = await get_query("SELECT * FROM DAYS LEFT JOIN USERS ON DAYS.who = USERS.tg_id ORDER BY day;")
     msg = f"There are {len(days)} events:\n\n"
     for day in days:
         row = await get_day_row_info(day)
@@ -86,9 +368,7 @@ async def print_event(**kwargs):
         WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})
         ORDER BY DAYS.day;
     ''')
-    print(day)
     row = await get_day_row_info(day[0])
-    print(row)
     reply_markup = await get_back_btn(keyboard_id=2)
     await edit_message(usr_id, row, reply_markup, "Markdown")
 
@@ -575,7 +855,6 @@ async def pick_subscriber(**kwargs):
     await edit_message(usr_id, msg, keyboard)
     return ""
     
-
 async def acces_who(**kwargs):
     # who could listen to this event
     usr_id = kwargs['usr_id']
@@ -694,7 +973,7 @@ async def get_help(**kwargs):
 async def calc_force(**kwargs):
     usr_id = kwargs['usr_id']
     reply_markup = await get_back_btn(keyboard_id=6)
-    response = await calculate_events([0,1], [])
+    response = await calculate_events([0,1,2], [])
     response = "Events were forcefully recaulculated:\n\n" +  response
     await edit_message(usr_id, response, reply_markup)
     return ""
@@ -835,8 +1114,8 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         action = 'rejected'
                         queries.append(f"UPDATE DAYS_invites SET sts = 'rejected' WHERE id = {callback_data[2]}")
                         msg  = "Invitation was succesfully rejected!"
-                    # send notification to notification sender
-                    event_answ = await get_query(f"SELECT * FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+                    # send notification to Invitation sender
+                    event_answ = await get_query(f"SELECT * FROM DAYS WHERE id = {callback_data[3]}")
                     username   = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
                     usr_from   = await get_query(f"SELECT usr_from FROM DAYS_invites WHERE id = {callback_data[2]}")
                     event_answ = event_answ[0]
@@ -844,7 +1123,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     usr_from   = usr_from[0]['usr_from']
                     notification = await get_day_info(day=event_answ, frmt=0)
                     notification = f"User {username} has {action} your invitation!\n\n" + notification
-                    await send_msg(int(usr_from), notification)
+                    await send_notification(int(usr_from), system_name, "Notification", notification)
                     msg = msg + f"\n\nNotification sent to invitation sender"
                 else:
                     msg = "Action aborted!"
@@ -860,25 +1139,23 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 if callback_data[1].lower() == "yes":
                     queries.append(f"DELETE FROM DAYS WHERE id = {callback_data[2]}")
                     queries.append(f"UPDATE USERS SET event_id = NULL WHERE tg_id = {usr_id}")
-                    subscribers = await get_query(f"SELECT * FROM link INNER JOIN DAYS ON (DAYS.id = link.id1) WHERE id1 = {callback_data[2]} AND opt = 'look' AND usr_id <> {usr_id}")
+                    # info needed for notification
+                    listeners = await get_event_listeners(callback_data[2], 'all', f"AND usr_id <> {usr_id}")
+                    day = await get_query(f"SELECT * FROM DAYS WHERE id = {callback_data[2]}")
+                    day = day[0]
                     author = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
                     author = author[0]['name']
                     author = await author_link(author, usr_id)
                     msg = "Event was succesfully deleted!"
                     # send notification for everyone subscribed to event
                     await insert_data(queries)
-                    if len(subscribers) != 0:
-                        msg = msg + "\n\nSubscribers of this event were notified about it"
-                        for subscriber in subscribers:
-                            notification = f" has just deleted event '{subscriber['name']}'."
-                            if subscriber['day'] == None:
-                                subscriber['day'] = default_not_data
-                            if subscriber['descr'] == None:
-                                subscriber['descr'] = default_not_data
-                            notification = notification + f"It was scheduled on {subscriber['day']} and was about {subscriber['descr']}"
-                            notification = await parse_msg(notification)
-                            notification = f"Notification:\n\nUser {author}" + notification
-                            await send_msg(int(subscriber['usr_id']), notification, "Markdown")
+                    if len(listeners) != 0:
+                        msg = msg + "\n\nSubscribers and redactors of this event were notified about it"
+                        notification = f" has just deleted event '{day['name']}'.\nEvent info:\n\n" + await get_day_row_info(day)
+                        notification = await parse_msg(notification)
+                        notification = f"User {author}" + notification
+                        for listener in listeners:
+                            await send_notification(listener['usr_id'], system_name, "Notification", notification, "Markdown")
                 else:
                     msg = "Action aborted!"
             elif user_sts == "MODIFY_NAME":
@@ -955,6 +1232,8 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 # means that button calls some function
                 #  # https://stackoverflow.com/questions/1835756/using-try-vs-if-in-python
                 # extract some parameters for functions
+                usr_name = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
+                usr_name = usr_name[0]['name']
                 event_id = await get_query(f"SELECT event_id FROM USERS WHERE tg_id = {usr_id}")
                 event_id = event_id[0]['event_id']
                 event_name = ""
@@ -966,7 +1245,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         event_name = event_name[0]['name']
                 else:
                     event_id = 0
-                result = await globals()[callback_data[1]](usr_id=usr_id, event_name=event_name, event_id=event_id)
+                result = await globals()[callback_data[1]](usr_id=usr_id, event_name=event_name, event_id=event_id, usr_name=usr_name)
     except Exception as e:
         msg = f"Ooops, an error ocured:\n {repr(e)}"
         traceback.print_exc()
@@ -1209,8 +1488,12 @@ async def reschedule(day : dict) -> None:
     if day["period"] == None or int(day["period_am"]) == None:
         # if these fields are not provided event does not need to be rescheduled
         if day['delIfInPast'] == "yes" and day['format'] == '0':
-            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
-            return
+            #await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
+            # send notification that event was deleted, because period and period_am are not set and delIfInPast = true
+            listeners = await get_event_listeners(day['id'], 'all')
+            for listener in listeners:
+                await send_notification(listener['usr_id'], system_name, "Notification", f"Regular event {day['name']} was deleted, because period and period amount were not provided. Therefore it executes only once")
+        return
     vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
     period = day["period"]
     amount = int(day["period_am"])
@@ -1221,7 +1504,7 @@ async def reschedule(day : dict) -> None:
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
 
-async def check_day(day : dict, to_reschedule : bool, today : date, tomorrow : date, week : date) -> str:
+async def check_day(day : dict, today : date, tomorrow : date, week : date) -> str:
     date = datetime.strptime(day['day'], "%Y-%m-%d").date()
     notify = ""
     notfiy_whn = ""
@@ -1230,8 +1513,6 @@ async def check_day(day : dict, to_reschedule : bool, today : date, tomorrow : d
     elif date == week:
         notfiy_whn =  f"In 7 days there is"
     elif date == today:
-        if to_reschedule:
-            await reschedule(day)
         notfiy_whn = f"Today is"
     if notfiy_whn > "":
         notify = f"Attention! {notfiy_whn} " + await get_day_info(day=day, frmt=1)
@@ -1273,7 +1554,6 @@ async def calculate_events(formats : list, ids : list = []):
                 continue
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             if vDate < vToday:
-                response = response + f"{day['descr']} (id:{day['id']}) was rescheduled, becuase {str(vToday)} (today) is bigger than {day['day']}\n\n"
                 await reschedule(day)
     if 1 in formats:
         queris = []
@@ -1287,7 +1567,6 @@ async def calculate_events(formats : list, ids : list = []):
             v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
             queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
             row = row + f" is scheduled on {v_date}\n\n"
-            response = response + row
     if 2 in formats:
         queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE format = 2 ORDER BY day;")
@@ -1302,23 +1581,43 @@ async def calculate_events(formats : list, ids : list = []):
             vEnd = day['day_end']
             if vStart == None:
                 vStart = await get_tiny_date()
+            else:
+                vStart = datetime.strptime(vStart, "%Y-%m-%d").date()
             if vEnd == None:
                 vEnd = await get_infinite_date()
-            vStart = datetime.strptime(day['day_start'], "%Y-%m-%d").date()
-            vEnd = datetime.strptime(day['day_end'], "%Y-%m-%d").date()
+            else:
+                vEnd = datetime.strptime(vEnd, "%Y-%m-%d").date()
             # IF today is in period -> reschedule to next
             if vToday > vStart and vToday <= vEnd:
-                queris.append(f'''UPDATE DAYS SET day = '{vToday.strftime("%Y-%m-%d")}' WHERE id = {day['id']}''')
                 try:
-                    reschedule(day)
-                except DateOutOfBounds:
+                    await reschedule(day)
+                except DateOutOfBounds as e:
                     if day['delIfInPast'] == "yes":
+                        # send notification that event was deleted, because next calculated date is after end date
                         queris.append(f"DELETE FROM DAYS WHERE id = {day['id']}")
+                        listeners = await get_event_listeners(day['id'], 'all')
+                        for listener in listeners:
+                            await send_notification(listener['usr_id'], system_name, "Notification", f"Continious event {day['name']} was deleted, because {str(e)}")
             elif vToday > vEnd and day['delIfInPast'] == "yes":
+                # send notification that event was deleted, today is later than end date
                 queris.append(f"DELETE FROM DAYS WHERE id = {day['id']}")
+                listeners = await get_event_listeners(day['id'], 'all')
+                for listener in listeners:
+                    await send_notification(listener['usr_id'], system_name, "Notification", f"Continious event {day['name']} was deleted, because today is {vToday} and end date is {vEnd}")
     await insert_data(queris)
     return response
 
+async def get_event_listeners(event_id : int, opt : str, clause : str  = ""):
+    # clause - additional sql query
+    if not opt in ['all', 'look', 'modify']:
+        raise SystemError
+    if opt == 'all':
+        query = f"SELECT DISTINCT usr_id FROM link WHERE id1 = {event_id} AND link.format = 'days' AND (link.opt = 'look' OR link.opt = 'modify') {clause}"
+        t =  await get_query(query)
+        return await get_query(query)
+    else:
+        query = f"SELECT * FROM link WHERE id1 = {event_id} AND link.format = 'days' AND link.opt = '{opt}' {clause}"
+        return await get_query(query)
 
 async def delete_all_messages(chat_id : int):
     msgs = await get_query(f"SELECT * FROM DAYS_messages INNER JOIN USERS ON USERS.tg_id = DAYS_messages.chat_id WHERE chat_id = {chat_id}")
@@ -1366,6 +1665,25 @@ async def get_new_date(iDate : date, period : str, amount : int):
         # why do I use this insted of timedelta?
         iDate = await add_months(iDate, amount)
     return iDate
+
+async def send_notification(to : int, sender : str, header : str, body : str, parse_mode : str = None):
+    await send_msg(to, f"{header}\n\n{body}\n\n© {sender}", parse_mode)
+
+async def format_irregular(day : dict):
+    if day['occurence'] == None:
+        day['occurence'] = default_not_data
+    else:
+        day['occurence'] = occurrences[int(day['occurence'])]
+    if day['weekday'] == None:  
+        day['weekday'] = default_not_data
+    else:
+        day['weekday'] = weekdays[int(day['weekday'])]
+
+    if day['month'] == None:
+        day['month'] = default_not_data
+    else:
+        day['month'] = months[int(day['month'])]
+    return day
 
 def find_day_in_month(year, month, day_of_week, occurrence):
     # day_of_week = [0, 1, 2, 3, 4, 5, 6]
