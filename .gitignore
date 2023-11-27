@@ -27,6 +27,7 @@ bash/db_config.sh
 backups/*
 # csv export import
 bots/ReminderBot/csv/*
+bots/ReminderBot/querries/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

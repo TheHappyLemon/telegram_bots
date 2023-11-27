@@ -2,8 +2,6 @@
 
 # Source the database config
 source /home/ubuntu/bash/db_config.sh
-# Backup Directory
-BACKUP_DIR="/home/ubuntu/backups"
 
 DATE=$(date "+%Y%m%d_%H:%M:%S")
 NAME="${DB_NAME}_${DATE}"

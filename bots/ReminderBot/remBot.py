@@ -14,12 +14,12 @@ import traceback
 @dp.message_handler(content_types=[types.ContentType.DOCUMENT])
 async def handle_document(message: types.Message):
     usr_id = message.from_user.id
-    user_sts = await get_query(f"SELECT sts_chat FROM USERS WHERE tg_id = {usr_id}")
-    user_sts = user_sts[0]['sts_chat']
+    user_data = await get_query(f"SELECT sts_chat, name FROM USERS WHERE tg_id = {usr_id}")
+    user_sts = user_data[0]['sts_chat']
+    user_name = user_data[0]['name']
     # Save message
     querries = []
     querries.append(f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({usr_id}, {message.message_id})")
-    querries.append(f"UPDATE USERS SET sts_chat= 'IDLE' WHERE tg_id = {usr_id};")
     if user_sts == "EVENTS_ADD_CSV":
         # Check if the document is a CSV file
         if message.document.mime_type == 'text/csv':
@@ -30,6 +30,7 @@ async def handle_document(message: types.Message):
             await message.document.download(destination_file=path)
             await process_csv(usr_id, path)
     else:
+        querries.append(f"UPDATE USERS SET sts_chat= 'IDLE' WHERE tg_id = {usr_id};")
         reply_markup = await get_query(f"SELECT last_keyboard FROM USERS WHERE tg_id = {usr_id}")
         if len(reply_markup) == 0:
             reply_markup = await get_keyboard(group_id=0, user_id=usr_id)
@@ -131,20 +132,6 @@ async def echo(message: types.Message):
                 querries.append(f"INSERT INTO DAYS(name, format, who) VALUES('{input}', 1, {usr_id})")
             elif sts_chat == "EVENTS_ADD_C":
                 querries.append(f"INSERT INTO DAYS(name, format, who) VALUES('{input}', 2, {usr_id})")
-            #await insert_data(querries)
-            #day = await get_query(f"SELECT id FROM DAYS WHERE name = '{input}' AND who = {usr_id}")
-            #day = day[0]
-            #querries.clear()
-            if sts_chat == "EVENTS_ADD_I":
-                pass
-                #querries.append(f"INSERT INTO WEEKDAY_prm (day_id) VALUES({day['id']})")
-            elif sts_chat == "EVENTS_ADD_C":
-                pass
-                #vToday = await get_today()
-                #querries.append(f"INSERT INTO CONTINIOUSDAY_prm (day_id, day_start) VALUES({day['id']}, '{vToday.strftime('''%Y-%m-%d''')}')")
-                #querries.append(f"UPDATE DAYS SET day = '{vToday.strftime('''%Y-%m-%d''')}' WHERE id = {day['id']}")
-            #querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'look', 'days');")
-            #querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'modify', 'days');")
         elif sts_chat == "MODIFY_DEL":
             if await isYes(message.text.strip().lower()):
                 querries.append(f"DELETE FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
@@ -164,7 +151,8 @@ async def echo(message: types.Message):
         elif sts_chat == "MODIFY_AMT":
             keyboard = await get_keyboard(group_id=2, user_id = usr_id)
             try:
-                int(input)
+                if int(input) <= 0:
+                    raise ValueError
                 day_data = await get_query(f"SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE DAYS.id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
                 if len(day_data) > 0:
                     day_data = day_data[0]
@@ -174,7 +162,7 @@ async def echo(message: types.Message):
                 querries.append(f"UPDATE DAYS SET period_am = {input} WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
                 msg = "Period amount updated succesfully"
             except ValueError:
-                msg = "Whooops an error ocured:\n\n" + "Period amount should be an integer!"
+                msg = "Whooops an error ocured:\n\n" + "Period amount should be a positive integer!"
             except DateOutOfBounds as e:
                 msg = "Can not set new period amount, because\n\n" + str(e)
             except Exception as e:

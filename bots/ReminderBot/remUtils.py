@@ -88,10 +88,12 @@ async def process_csv(usr_id : int, path : str):
     flg_err = False
     flg_wrn = False
     querries = []
+    querries_add = []
     errors = {}
     warnings = {}
-    i = 2
+    i = 1
     for row in reader:
+        i = i + 1
         errors[i] = []
         warnings[i] = []
         # format data...
@@ -228,7 +230,6 @@ async def process_csv(usr_id : int, path : str):
                     errors[i].append(msg)
                 else:
                     # get key by value
-                    print(list(months.values()))
                     vMonth = list(months.keys())[list(months.values()).index(vMonth)]
             else:
                 warnings[i].append("Month should only be provided for irregular events. It will be ignored")
@@ -261,55 +262,72 @@ async def process_csv(usr_id : int, path : str):
             else:
                 warnings[i].append("Date end should only be provided for continious events. It will be ignored")
         elif vType == '2':
+            vDayEnd = "NULL"
             warnings[i].append("End date is empty. Event will be repeated forever")
         # TODO escape fields for sql
         if len(errors[i]) == 0:
-            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES('{vDate}', '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}')")
-            await insert_data(querries)
-            querries.clear()
-            day = await get_query(f"SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id}")
-            day = day[0]
-            querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'look', 'days');")
-            querries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {day['id']}, 'modify', 'days');")
+            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES('{vDate}', '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}');\n")
+            if vType == "1":
+                querries_add.append(f"UPDATE WEEKDAY_prm SET occurence = {vOccurence} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
+                querries_add.append(f"UPDATE WEEKDAY_prm SET month = {vMonth} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
+                querries_add.append(f"UPDATE WEEKDAY_prm SET weekday = {vWeekday} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
+            elif vType == "2":
+                querries_add.append(f"UPDATE CONTINIOUSDAY_prm SET day_start = '{vDayStart}' WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
+                querries_add.append(f"UPDATE CONTINIOUSDAY_prm SET day_end = '{vDayEnd}' WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
         else:
             flg_err = True
         if len(warnings[i]) != 0:
             flg_wrn = True
     msg = ""
     if flg_err:
-        i = 1
+        i = 0
         for key in errors:
             if len(errors[key]) == 0:
                 continue
-            i = i + 1
             j = 1
-            row = f"Line Nr {i}:\n\n"
+            row = f"Line Nr {key}:\n\n"
             for err_txt in errors[key]:
-                row = f"\t{j}) {err_txt}\n"
+                row = row + f"\t{j}) {err_txt}\n"
             msg = msg + row
+            i = i + 1
         msg = f"You have errors in {i} rows:\n" + msg 
     if flg_wrn:
-        i = 1
+        i = 0
         if msg > "":
-            msg = msg + "\n\nAnd"
+            msg = msg + "\nAnd"
+        msg_warn = ""
         for key in warnings:
             if len(warnings[key]) == 0:
                 continue
-            i = i + 1
             j = 1
-            row = ""
+            row = f"Line Nr {key}:\n"
             for wrn_txt in warnings[key]:
-                row = f"\t{j}) {wrn_txt}\n"
-            msg = msg + row
-        msg = msg + f"You have warnings in {i} rows:\n" + msg
-    if msg > "":
-        msg = msg + "\n\nImport them anyway?"
+                row = row + f"\t\t\t{j}) {wrn_txt}\n"
+            msg_warn = msg_warn + row
+            i = i + 1
+        msg = msg + f" You have warnings in {i} rows:\n\n" + msg_warn
+    if len(querries) > 0:
+        files = '1'
+        f = open(f"{path_querries}/{usr_id}_main.sql", 'w', encoding='utf-8')
+        f.writelines(querries)
+        f.flush()
+        f.close()
+        if len(querries_add) > 0:
+            files = '2'
+            f = open(f"{path_querries}/{usr_id}_add.sql", 'w', encoding='utf-8')
+            f.writelines(querries_add)
+            f.flush()
+            f.close()
+        #async def confirm_choice(usr_id : int, callback_data : str, group : int, msg : str = ""):
+        if msg > "":
+            msg = msg + "\n\nImport events anyway? Lines with errors will be skipped, other will be imported"
+        else:
+            msg = "No errors found. Import events?"
+        await confirm_choice(usr_id, f"{files};{usr_id}", 9, msg)
     else:
-        msg = "No errors found. Import events?"
-    await edit_message(usr_id, msg)
-    f = input("import?")
-    if f == 'yes':
-        await insert_data(querries)
+        msg = msg + "\n\n" + "Can not import a single line. Fix errors and come back"
+        keyboard = await get_back_btn(9)
+        await edit_message(usr_id, msg, keyboard)
 
 async def get_day_row_info(day : dict):
     if day['day'] is None:
@@ -1138,6 +1156,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 group = 1
                 if callback_data[1].lower() == "yes":
                     queries.append(f"DELETE FROM DAYS WHERE id = {callback_data[2]}")
+                    queries.append(f"DELETE FROM link WHERE id1 = {callback_data[2]} AND format = 'days' ")
                     queries.append(f"UPDATE USERS SET event_id = NULL WHERE tg_id = {usr_id}")
                     # info needed for notification
                     listeners = await get_event_listeners(callback_data[2], 'all', f"AND usr_id <> {usr_id}")
@@ -1198,6 +1217,20 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     queries.append(f"UPDATE DAYS SET delIfInPast = 'no' WHERE id = {callback_data[3]}")
                     msg = f"Event wont be deleted unless you do it by yourself"
                 msg = "Saved!\n\n" + msg
+            elif user_sts == "EVENTS_ADD_CSV":
+                group = 9
+                if callback_data[1].lower() == "yes":
+                    msg = "Events are being created asynchronously. It may take a few seconds."
+                    # I want first file to execute first, to insert records in DAYS table
+                    # Second file needs ID from DAYS to update linked tables *_prm (it finds id by name + who)
+                    # I was afraid that becaue popen does not block main thread second file may start executing before first is finished
+                    # But I tested on 50 events at a time and all went OK, so I will leave it as it is for now
+                    # I can use Popen.wait() but it blocks main thread, so bot will be unresponsive
+                    subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_main.sql"])
+                    if callback_data[2] == "2":
+                        subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_add.sql"])
+                else:
+                    msg = "Action aborted!"
             elif user_sts == 'blah blah':
                 pass
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
