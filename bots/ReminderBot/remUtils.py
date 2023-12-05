@@ -347,7 +347,7 @@ async def get_day_row_info(day : dict):
     elif day['format'] == '1':
         day = await format_irregular(day)
         row = row + f" Occurs on every {day['occurence']} {day['weekday']} of {day['month']}"
-    if day['name'] != None:
+    if day.get('USERS.name') != None:
         author = f"[{day['USERS.name']}](tg://user?id={day['tg_id']})"
     else:
         author = 'UNKNOWN'
@@ -641,8 +641,9 @@ async def invites_print(**kwargs):
         FROM DAYS_invites d
         JOIN USERS u1 ON d.usr_from = u1.tg_id
         JOIN USERS u2 ON d.usr_to = u2.tg_id
-        WHERE d.usr_from = {usr_id} AND d.day_id = {event_id};
+        WHERE d.day_id = {event_id};
     '''
+    # i want to show all invites to this event, not only from user (d.usr_from = {usr_id})
     invites = await get_query(query)
     if len(invites) == 0:  
         await edit_message(usr_id, f"There are no invites for event {event_name}", reply_markup)
@@ -697,8 +698,9 @@ async def pick_invitation(**kwargs):
         FROM DAYS_invites d
         JOIN USERS u1 ON d.usr_from = u1.tg_id
         JOIN USERS u2 ON d.usr_to = u2.tg_id
-        WHERE d.usr_from = {usr_id} AND d.day_id = {event_id};
+        WHERE d.day_id = {event_id};
     '''
+    # it is possible to pick all invites, not only that you send (d.usr_from = {usr_id} AND)
     invites = await get_query(query)
     if len(invites) == 0:
         msg = f"Event {event_name} has 0 invitations"
@@ -1148,6 +1150,33 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             elif user_sts == 'INVITE_PICK':
                 group = 3
                 if callback_data[1].lower() == "yes":
+                    query = f'''
+                        SELECT USERS.name AS u_name, DAYS.*, di.*
+                        FROM DAYS_invites di
+                        INNER JOIN USERS ON (USERS.tg_id = di.usr_from)
+                        INNER JOIN DAYS  ON (DAYS.id = di.day_id)
+                        WHERE di.id = {callback_data[2]}
+                    '''
+                    invite = await get_query(query)
+                    invite = invite[0]
+                    if not (invite['sts'] in ['accepted', 'rejected']):
+                        # send notification to users to whom this invite was
+                        # invite type
+                        if invite['type'] == 'look':
+                            action = 'listen to'
+                        elif invite['type'] == 'modify':
+                            action = 'become a redactor of'
+                        else:
+                            action = '<Unknown>'
+                        # user that deleted the invite. It may be not only author of invitation
+                        author = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
+                        author = author[0]['name']
+                        author = await author_link(author, usr_id)
+                        # form text message itself and send it
+                        notification = f"  has just deleted invitation to you. Invitation info:\n\n{invite['u_name']} was inviting you to {action} event '{invite['name']}'. It was scheduled on '{invite['day']}' and was about '{invite['descr']}'"
+                        notification = await parse_msg(notification)
+                        notification = f"User {author}" + notification
+                        await send_notification(invite['usr_to'], system_name, "Notification", notification, "Markdown")
                     queries.append(f"DELETE FROM DAYS_invites WHERE id = {callback_data[2]}")
                     msg = "Invitation deleted!"
                 else:
@@ -1156,11 +1185,19 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 group = 1
                 if callback_data[1].lower() == "yes":
                     queries.append(f"DELETE FROM DAYS WHERE id = {callback_data[2]}")
-                    queries.append(f"DELETE FROM link WHERE id1 = {callback_data[2]} AND format = 'days' ")
                     queries.append(f"UPDATE USERS SET event_id = NULL WHERE tg_id = {usr_id}")
+                    queries.append(f"UPDATE USERS SET last_keyboard = 1 WHERE tg_id = {usr_id}")
                     # info needed for notification
                     listeners = await get_event_listeners(callback_data[2], 'all', f"AND usr_id <> {usr_id}")
-                    day = await get_query(f"SELECT * FROM DAYS WHERE id = {callback_data[2]}")
+                    day = await get_query(f'''
+                        SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+                        FROM DAYS
+                        LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+                        LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+                        LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+                        WHERE DAYS.id = {callback_data[2]}
+                        ORDER BY DAYS.day;
+                    ''')
                     day = day[0]
                     author = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
                     author = author[0]['name']
@@ -1171,7 +1208,6 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     if len(listeners) != 0:
                         msg = msg + "\n\nSubscribers and redactors of this event were notified about it"
                         notification = f" has just deleted event '{day['name']}'.\nEvent info:\n\n" + await get_day_row_info(day)
-                        notification = await parse_msg(notification)
                         notification = f"User {author}" + notification
                         for listener in listeners:
                             await send_notification(listener['usr_id'], system_name, "Notification", notification, "Markdown")
@@ -1521,7 +1557,7 @@ async def reschedule(day : dict) -> None:
     if day["period"] == None or int(day["period_am"]) == None:
         # if these fields are not provided event does not need to be rescheduled
         if day['delIfInPast'] == "yes" and day['format'] == '0':
-            #await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
+            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
             # send notification that event was deleted, because period and period_am are not set and delIfInPast = true
             listeners = await get_event_listeners(day['id'], 'all')
             for listener in listeners:

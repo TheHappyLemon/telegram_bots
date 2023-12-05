@@ -117,11 +117,14 @@ async def echo(message: types.Message):
     user_sts = await get_query(f"SELECT sts_chat, last_keyboard FROM USERS WHERE tg_id = {usr_id}")
     user_sts = user_sts[0]
     querries = []
-    input = await escape_mysql(message.text.strip().lower())
+    if user_sts != "MODIFY_AMT":
+        # integer input
+        input = await escape_mysql(message.text.strip().lower())
     # input = await parse_msg(message.text.strip().lower())
     keyboard = None
     sts_chat = user_sts['sts_chat']
     clear_chat = True
+    querries.append(f"UPDATE USERS SET sts_chat= 'IDLE' WHERE tg_id = {usr_id};")
     try:
         if sts_chat in ["EVENTS_ADD_R", "EVENTS_ADD_I", "EVENTS_ADD_C"]:
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
@@ -209,7 +212,7 @@ async def echo(message: types.Message):
             is_taken = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{input}'")
             if len(is_taken) != 0:
                 msg = f"Error:\n\nUsername '{input}' is already taken!"
-                querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
+                #querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
             else:
                 querries.append(f"UPDATE USERS SET last_input = '{input}'")
                 await insert_data(querries)
@@ -218,7 +221,7 @@ async def echo(message: types.Message):
         elif sts_chat == "FEEDBACK_LEAVE":
             whn = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             querries.append(f"INSERT INTO FEEDBACK (data, user_id, whn) VALUES ('{input}', {usr_id}, '{whn}')")   
-            querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
+            #querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
             msg = f"Feedback saved!\n\nThanks for information!"
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
         elif sts_chat == "FEEDBACK_ANSW":
