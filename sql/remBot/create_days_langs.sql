@@ -1,0 +1,6 @@
+CREATE TABLE DAYS_langs (
+    id INT NOT NULL AUTO_INCREMENT,
+    lang VARCHAR(2) NOT NULL,
+    json VARCHAR(128) NOT NULL,
+    PRIMARY KEY (id)
+);

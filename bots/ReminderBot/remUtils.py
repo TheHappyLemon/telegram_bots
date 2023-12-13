@@ -15,7 +15,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.exceptions import *
 from exceptions import *
 from calendar import monthrange
+from pytz import timezone
 import traceback
+import config
 
 async def export_to_csv(**kwargs):
     usr_id = kwargs['usr_id']
@@ -391,8 +393,15 @@ async def print_event(**kwargs):
     await edit_message(usr_id, row, reply_markup, "Markdown")
 
 async def get_back_btn(keyboard_id : int):
-    keyboard =InlineKeyboardMarkup()
+    keyboard = InlineKeyboardMarkup()
     button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;{keyboard_id};{keyboard_id};{keyboard_id};IDLE')
+    # use add instead of insert so back button always takes full last row
+    keyboard.add(button)
+    return keyboard
+
+async def add_back_btn(keyboard_id : int, keyboard : InlineKeyboardMarkup):
+    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;{keyboard_id};{keyboard_id};{keyboard_id};IDLE')
+    # use add instead of insert so back button always takes full last row
     keyboard.add(button)
     return keyboard
 
@@ -418,9 +427,8 @@ async def change_date(**kwargs):
     year_now = date.today().year
     for i in range(year_now + 30, year_now - 1, -1):
         button = InlineKeyboardButton(text=str(i), callback_data=f'DATE_YEAR_CHOOSEN;{i}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new date year:", keyboard)
     return ""
 
@@ -429,9 +437,8 @@ async def change_date_month(**kwargs):
     keyboard = InlineKeyboardMarkup()
     for mnt_key, mnt_val in months.items():
         button = InlineKeyboardButton(text=mnt_val, callback_data=f'DATE_MONTH_CHOOSEN;{mnt_key}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new date month:", keyboard)
 
 async def change_date_day(**kwargs):
@@ -441,9 +448,8 @@ async def change_date_day(**kwargs):
     dd_today = (await get_today()).day
     for i in range(1, dd + 1):
         button = InlineKeyboardButton(text=str(i) + (" Today" if i == dd_today else ""), callback_data=f'DATE_DAY_CHOOSEN;{i}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new date day:", keyboard)
 
 async def change_date_date(**kwargs):
@@ -527,9 +533,8 @@ async def change_period(**kwargs):
     keyboard = InlineKeyboardMarkup()
     for period in periods:
         button = InlineKeyboardButton(text=period, callback_data=f'PERIOD_CHOOSEN;{period}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new period for event {event_name}", keyboard)
     return ""
 
@@ -540,9 +545,8 @@ async def change_weekday(**kwargs):
     keyboard = InlineKeyboardMarkup()
     for wkd_key, wkd_val in weekdays.items():
         button = InlineKeyboardButton(text=wkd_val, callback_data=f'WEEKDAY_CHOOSEN;{wkd_key};{event_id}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new weekday for event {event_name}", keyboard)
     return ""
 
@@ -553,9 +557,8 @@ async def change_occurence(**kwargs):
     keyboard = InlineKeyboardMarkup()
     for ocr_key, ocr_val in occurrences.items():
         button = InlineKeyboardButton(text=ocr_val, callback_data=f'OCCURENCE_CHOOSEN;{ocr_key};{event_id}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new occurence for event {event_name}", keyboard)
     return ""
 
@@ -566,9 +569,8 @@ async def change_month(**kwargs):
     keyboard = InlineKeyboardMarkup()
     for mnt_key, mnt_val in months.items():
         button = InlineKeyboardButton(text=mnt_val, callback_data=f'MONTH_CHOOSEN;{mnt_key};{event_id}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;2;2;2;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(2, keyboard)
     await edit_message(usr_id, f"Choose new month for event {event_name}", keyboard)
     return ""
 
@@ -670,9 +672,8 @@ async def pick_feedback_adm(**kwargs):
         sts, additional = await get_feedback_text(feedback['sts'])
         txt = f"{feedback['name']} : status '{sts}', left on {feedback['whn']}"
         button = InlineKeyboardButton(text=txt, callback_data=f'FEEDBACK_CHOOSEN;{feedback["id"]}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;6;6;6;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(6, keyboard)
     await edit_message(usr_id, msg, keyboard)
 
 async def pick_feedback_my(**kwargs):
@@ -684,9 +685,8 @@ async def pick_feedback_my(**kwargs):
         sts, additional = await get_feedback_text(feedback['sts'])
         txt = f"Status '{sts}', left on {feedback['whn']}"
         button = InlineKeyboardButton(text=txt, callback_data=f'FEEDBACK_CHOOSEN;{feedback["id"]}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;5;5;5;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(5, keyboard)
     await edit_message(usr_id, msg, keyboard)
 
 async def pick_invitation(**kwargs):
@@ -707,13 +707,12 @@ async def pick_invitation(**kwargs):
         keyboard  = await get_back_btn(keyboard_id=3)
     else:
         msg = f"Choose an invitation"
-        keyboard = InlineKeyboardMarkup(row_width=3)
+        keyboard = InlineKeyboardMarkup(row_width=2)
         for invite in invites:
             txt = invite['usr_to_name'] + ' by ' + invite['usr_from_name'] + ' - ' + invite['sts']
             button = InlineKeyboardButton(text=txt, callback_data=f'INVITE_CHOOSEN;{invite["id"]}')
-            keyboard.add(button)
-        button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;3;3;3;IDLE')
-        keyboard.add(button)
+            keyboard.insert(button)
+        keyboard = await add_back_btn(3, keyboard)
     await edit_message(usr_id, msg, keyboard)
     return ""
 
@@ -731,9 +730,8 @@ async def confirm_choice(usr_id : int, callback_data : str, group : int, msg : s
     keyboard = InlineKeyboardMarkup()
     for word in confirm_words:
         button = InlineKeyboardButton(text=word, callback_data=f'CONFIRM_CHOOSEN;{word};{callback_data}')
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;{group};{group};{group};IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(group, keyboard)
     await edit_message(usr_id, msg + f"\n\nAre you sure?", keyboard)
     return ""
 
@@ -796,7 +794,7 @@ async def pick_invitation_my(**kwargs):
     WHERE di.usr_to = {usr_id} AND di.sts <> 'rejected' AND di.sts <> 'accepted'
     '''
     invites = await get_query(query)
-    keyboard = InlineKeyboardMarkup(row_width=3)
+    keyboard = InlineKeyboardMarkup(row_width=2)
     for invite in invites:
         type = invite['type']
         if type == 'look':
@@ -804,9 +802,8 @@ async def pick_invitation_my(**kwargs):
         elif type == 'modify':
             type = 'become a redactor of'
         button = InlineKeyboardButton(text=invite['u_name'] + ' - ' + invite['name'] + ' - ' + type, callback_data=f"INVITATION_MY_CHOOSEN;{invite['di.id']};{invite['id']};{invite['type']}")
-        keyboard.add(button)
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;7;7;7;IDLE')
-    keyboard.add(button)
+        keyboard.insert(button)
+    keyboard = await add_back_btn(7, keyboard)
     await edit_message(usr_id, f"Choose an invitation:", keyboard)
     return ""
 
@@ -867,11 +864,10 @@ async def pick_subscriber(**kwargs):
         msg = f"Choose user you want to unsubcribe from '{event_name}'"
         for sub in subs:
             button = InlineKeyboardButton(text=sub['name'], callback_data=f'SUBSCRIBER_CHOOSEN;{sub["tg_id"]}')
-            keyboard.add(button)
+            keyboard.insert(button)
     else:
         msg = f"Noone is subscribed to event '{event_name}'"
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;3;3;3;IDLE')
-    keyboard.add(button)
+    keyboard = await add_back_btn(3, keyboard)
     await edit_message(usr_id, msg, keyboard)
     return ""
     
@@ -954,11 +950,10 @@ async def pick_event(usr_id : int, opt : str):
             if day['day'] is None:
                 day['day'] = default_not_calc
             button = InlineKeyboardButton(text=day['name'], callback_data=f'EVENT_CHOOSEN;{day["id"]};{opt}')
-            keyboard.add(button)
+            keyboard.insert(button)
         # callback_data = <TYPE> ; <nextkeyboard>or<function> ; <currentKeyboard> ; <group_num><sts_user>
         #data = "BUTTON_PRESSED" + ";" + data + ";" + button_json['group_num'] + ";" + last_keyboard + ";" + button_json['sts_user']
-        button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;1;1;1;IDLE')
-        keyboard.add(button)
+        keyboard = await add_back_btn(10, keyboard)
     await edit_message(usr_id, msg, keyboard)
     return ""
 
@@ -1020,8 +1015,9 @@ async def handle_button_press(callback_query: types.CallbackQuery):
         usr_id = callback_query.from_user.id
         queries = []
         # Load next keyboard that needs event name
-        user_sts = await get_query(f"SELECT sts_chat FROM USERS WHERE tg_id = {usr_id}")
-        user_sts = user_sts[0]['sts_chat']
+        user_info = await get_query(f"SELECT sts_chat, language FROM USERS WHERE tg_id = {usr_id}")
+        user_sts = user_info[0]['sts_chat']
+        usr_lang = user_info[0]['language']
         keyboard = None
         if action_type == "EVENT_CHOOSEN":
             if user_sts == 'EVENTS_PICK_U' or user_sts == 'EVENTS_PICK_R':
@@ -1031,11 +1027,13 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     msg = "IMPORTANT!\n\nYou are the only " + ("subscriber" if callback_data[2] == 'look' else "redactor") + f" of event {day_data[0]['name']}"
                     msg = msg + '\nIf you continue, this event will be deleted!'
                 await confirm_choice(usr_id, callback_data[1] + ";" + callback_data[2] + ";" + str(len(day_data) == 1), 1, msg)
-            elif user_sts == 'EVENTS_PICK_D' or user_sts == 'EVENTS_PICK_A':
+            elif user_sts == 'EVENTS_PICK_D' or user_sts == 'EVENTS_PICK_A' or user_sts == 'EVENTS_PICK_N':
                 if user_sts == 'EVENTS_PICK_D':
                     group = 2
                 elif user_sts == 'EVENTS_PICK_A':
                     group = 3
+                elif user_sts == 'EVENTS_PICK_N':
+                    group = 11
                 # save event name that user has choosen
                 queries.append(f"UPDATE USERS SET last_keyboard = {group} WHERE tg_id = {usr_id};")
                 queries.append(f"UPDATE USERS SET sts_chat      = 'IDLE'  WHERE tg_id = {usr_id};")
@@ -1107,6 +1105,27 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             queries.append(f"UPDATE USERS SET last_input = '{answ_day + '-' + dd}' WHERE tg_id = {usr_id}")
             await insert_data(queries)
             await change_date_date(usr_id = usr_id, usr_sts = user_sts)
+        elif action_type == "NOTIFIC_OPT_CHOOSEN":
+            queries.append(f"UPDATE USERS SET last_input = '{callback_data[1]}' WHERE tg_id = {usr_id}")
+            await insert_data(queries)
+            await add_notific_hour(usr_id, usr_lang)
+        elif action_type == "NOTIFIC_HH_CHOOSEN":
+            answ_ntf = await get_query(f"SELECT last_input FROM USERS WHERE tg_id = {usr_id}")
+            answ_ntf = answ_ntf[0]['last_input']
+            answ_ntf = answ_ntf + ';' + callback_data[1]
+            queries.append(f"UPDATE USERS SET last_input = '{answ_ntf}' WHERE tg_id = {usr_id}")
+            await insert_data(queries)
+            await add_notific_minutes(usr_id, callback_data[1], usr_lang)
+        elif action_type == "NOTIFIC_MM_CHOOSEN":
+            answ_ntf = await get_query(f"SELECT last_input, event_id FROM USERS WHERE tg_id = {usr_id}")
+            event_id = answ_ntf[0]['event_id']
+            answ_ntf = answ_ntf[0]['last_input']
+            answ_ntf = answ_ntf + ' : ' + callback_data[1]
+            queries.append(f"UPDATE USERS SET last_input = '{answ_ntf}' WHERE tg_id = {usr_id}")
+            await insert_data(queries)
+            await create_notific(usr_id, answ_ntf, event_id, usr_lang)
+        elif action_type == "NOTIFIC_CHOOSEN":
+            await confirm_choice(usr_id, callback_data[1], 11)
         elif action_type == "CONFIRM_CHOOSEN":
             if user_sts == 'MAKE_PRIVATE' or user_sts == 'MAKE_PUBLIC' :
                 group = 3 
@@ -1173,7 +1192,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         author = author[0]['name']
                         author = await author_link(author, usr_id)
                         # form text message itself and send it
-                        notification = f"  has just deleted invitation to you. Invitation info:\n\n{invite['u_name']} was inviting you to {action} event '{invite['name']}'. It was scheduled on '{invite['day']}' and was about '{invite['descr']}'"
+                        notification = f"  has just deleted invitation that was sent to you. Invitation info:\n\n{invite['u_name']} was inviting you to {action} event '{invite['name']}'. It was scheduled on '{invite['day']}' and was about '{invite['descr']}'"
                         notification = await parse_msg(notification)
                         notification = f"User {author}" + notification
                         await send_notification(invite['usr_to'], system_name, "Notification", notification, "Markdown")
@@ -1267,6 +1286,13 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_add.sql"])
                 else:
                     msg = "Action aborted!"
+            elif user_sts == "NOTIFIC_DEL":
+                group = 11
+                if callback_data[1].lower() == "yes":
+                    msg = config.lang_instance.get_text(usr_lang, 'DAYS_notifications.deleted')
+                    queries.append(f"DELETE FROM DAYS_notifications WHERE id = {callback_data[2]}")
+                else:
+                    msg = "Action aborted!"
             elif user_sts == 'blah blah':
                 pass
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
@@ -1299,12 +1325,12 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 await edit_message(usr_id, default_keyboard_text, keyboard)
             except ValueError:
                 # means that button calls some function
-                #  # https://stackoverflow.com/questions/1835756/using-try-vs-if-in-python
+                # https://stackoverflow.com/questions/1835756/using-try-vs-if-in-python
                 # extract some parameters for functions
-                usr_name = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
-                usr_name = usr_name[0]['name']
-                event_id = await get_query(f"SELECT event_id FROM USERS WHERE tg_id = {usr_id}")
-                event_id = event_id[0]['event_id']
+                usr_info = await get_query(f"SELECT name, event_id, language FROM USERS WHERE tg_id = {usr_id}")
+                usr_name = usr_info[0]['name']
+                event_id = usr_info[0]['event_id']
+                usr_lang = usr_info[0]['language']
                 event_name = ""
                 if event_id != None:
                     event_name = await get_query(f"SELECT name FROM DAYS WHERE DAYS.id = {event_id}")
@@ -1314,7 +1340,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         event_name = event_name[0]['name']
                 else:
                     event_id = 0
-                result = await globals()[callback_data[1]](usr_id=usr_id, event_name=event_name, event_id=event_id, usr_name=usr_name)
+                result = await globals()[callback_data[1]](usr_id=usr_id, event_name=event_name, event_id=event_id, usr_name=usr_name, usr_lang = usr_lang)
     except Exception as e:
         msg = f"Ooops, an error ocured:\n {repr(e)}"
         traceback.print_exc()
@@ -1442,7 +1468,7 @@ async def get_keyboard(group_id : int, user_id : int, row_width : int = 2):
             last_keyboard = button_json['group_num']
         data = "BUTTON_PRESSED" + ";" + data + ";" + button_json['group_num'] + ";" + last_keyboard + ";" + button_json['sts_user']
         button = InlineKeyboardButton(text=button_json['text'], callback_data=data)
-        keyboard.add(button)
+        keyboard.insert(button)
     return keyboard
 
 async def escape_mysql(msg : str):
@@ -1545,7 +1571,7 @@ async def insert_data(queries: list):
 async def get_today():
     # was needed for tests mainly
     #return datetime.strptime("2023-07-09", "%Y-%m-%d").date()
-    return date.today()
+    return datetime.now(timezone('Europe/Kiev')).date()
 
 async def get_infinite_date():
     return datetime(9999, 1, 1).date()
@@ -1753,6 +1779,77 @@ async def format_irregular(day : dict):
     else:
         day['month'] = months[int(day['month'])]
     return day
+
+# DAYS_notifications
+async def print_notific(**kwargs):
+    usr_id = kwargs['usr_id']
+    event_name = kwargs['event_name']
+    notifications = await get_query(f"SELECT * FROM DAYS_notifications WHERE day_id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
+    msg = f"There are {len(notifications)} notifications for event {event_name}:\n\n"
+    for notific in notifications:
+        row = f"* {notific_text[notific['when_date']]} at {notific['when_time']}" 
+        msg = msg + row + "\n\n"
+    reply_markup = await get_back_btn(keyboard_id=11)
+    await edit_message(usr_id, msg, reply_markup)
+    return ""
+
+async def pick_notific(**kwargs):
+    usr_id = kwargs['usr_id']
+    event_id = kwargs['event_id']
+    event_name = kwargs['event_name']
+    usr_lang = kwargs['usr_lang']
+    notifics = await get_query(f"SELECT * FROM DAYS_notifications WHERE day_id = {event_id}")
+    reply_markup = await get_back_btn(keyboard_id=11)
+    if len(notifics) == 0:
+        txt = config.lang_instance.get_text(usr_lang, 'DAYS_notifications.no_notifics').replace('<event_name>', event_name)
+        await edit_message(usr_id, txt, reply_markup)
+    else:
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        for notific in notifics:
+            button = InlineKeyboardButton(text=notific_text[notific['when_date']] + " - " + notific['when_time'], callback_data=f'NOTIFIC_CHOOSEN;{notific["id"]}')
+            keyboard.insert(button)
+        keyboard = await add_back_btn(11, keyboard)
+        await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'DAYS_notifications.choose').replace('<event_name>', event_name), keyboard)
+
+
+async def add_notific(**kwargs):
+    usr_id = kwargs['usr_id']
+    keyboard = InlineKeyboardMarkup(row_width=len(notific_text) // 3)
+    for ntf_key, ntf_val in notific_text.items():
+        button = InlineKeyboardButton(text=ntf_val, callback_data=f'NOTIFIC_OPT_CHOOSEN;{ntf_key}')
+        keyboard.insert(button)
+    keyboard = await add_back_btn(11, keyboard)
+    await edit_message(usr_id, f"Chose notification day", keyboard)
+
+async def add_notific_hour(usr_id, usr_lang):
+    keyboard = InlineKeyboardMarkup(row_width=4)
+    for i in range(24):
+        txt = str(i)
+        txt = txt if len(txt) == 2 else '0' + txt
+        button = InlineKeyboardButton(text=txt, callback_data=f'NOTIFIC_HH_CHOOSEN;{txt}')
+        keyboard.insert(button)
+    keyboard = await add_back_btn(11, keyboard)
+    await edit_message(usr_id, f"Chose notification hour", keyboard)
+
+async def add_notific_minutes(usr_id, hour, usr_lang):
+    keyboard = InlineKeyboardMarkup(row_width=3)
+    for i in range(0, 60, 5):
+        mm = str(i)
+        mm = mm if len(mm) == 2 else '0' + mm
+        txt = hour + " : " + mm        
+        button = InlineKeyboardButton(text=txt, callback_data=f'NOTIFIC_MM_CHOOSEN;{mm}')
+        keyboard.insert(button)
+    keyboard = await add_back_btn(11, keyboard)
+    await edit_message(usr_id, f"Chose notification minutes", keyboard)
+
+async def create_notific(usr_id, data, event_id, usr_lang):
+    # data = <DAYS_notifications.when_date> ; <DAYS_notifications.when_time>
+    data = data.split(';')
+    querries = [f"INSERT INTO DAYS_notifications (day_id, when_date, when_time) VALUES({event_id}, '{data[0]}', '{data[1]}')"]
+    await insert_data(querries)
+    keyboard = await get_back_btn(11)
+    await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'DAYS_notifications.created'), keyboard)
+
 
 def find_day_in_month(year, month, day_of_week, occurrence):
     # day_of_week = [0, 1, 2, 3, 4, 5, 6]

@@ -1,0 +1,8 @@
+{
+    "DAYS_notifications":{
+        "created": "Done!\n\nNotification succesfully created",
+        "no_notifics": "Event <event_name> has 0 notifications! You should add a few 😉",
+        "choose": "Choose notification to delete from event <event_name>",
+        "deleted": "Notification succesfully deleted!"
+    }
+}

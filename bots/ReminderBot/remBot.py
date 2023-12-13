@@ -3,7 +3,6 @@ from remUtils import *
 from aiogram import Bot, Dispatcher, types, executor
 from remUtils import *
 from datetime import date
-
 from time import sleep
 import random
 import string
@@ -90,7 +89,12 @@ async def remind(bot : Bot):
     }
     '''
     # add_info = await get_query(f"SELECT day_start, day_end FROM CONTINIOUSDAY_prm WHERE CONTINIOUSDAY_prm.day_id = {day['id']}")
-    days = await get_query("SELECT * FROM DAYS LEFT JOIN link ON (DAYS.id = link.id1) LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id = CONTINIOUSDAY_prm.day_id) WHERE link.format = 'days' AND link.opt = 'look' ORDER BY day")
+    days = await get_query('''
+        SELECT * FROM DAYS
+        LEFT JOIN link ON (DAYS.id = link.id1)
+        LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id = CONTINIOUSDAY_prm.day_id)
+        WHERE link.format = 'days' AND link.opt = 'look' ORDER BY day
+    ''')
     msgs = {}
     today = await get_today()
     tomorrow = today + timedelta(days=1)
@@ -212,7 +216,6 @@ async def echo(message: types.Message):
             is_taken = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{input}'")
             if len(is_taken) != 0:
                 msg = f"Error:\n\nUsername '{input}' is already taken!"
-                #querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
             else:
                 querries.append(f"UPDATE USERS SET last_input = '{input}'")
                 await insert_data(querries)
@@ -221,7 +224,6 @@ async def echo(message: types.Message):
         elif sts_chat == "FEEDBACK_LEAVE":
             whn = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             querries.append(f"INSERT INTO FEEDBACK (data, user_id, whn) VALUES ('{input}', {usr_id}, '{whn}')")   
-            #querries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id}")
             msg = f"Feedback saved!\n\nThanks for information!"
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
         elif sts_chat == "FEEDBACK_ANSW":
@@ -264,6 +266,9 @@ async def on_startup(dp : Dispatcher):
     # scheduler.add_job(remind, 'cron', second = '*', args=(bot,))
     scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
     scheduler.add_job(recalculate, 'cron', hour='0', minute='01', timezone='Europe/Kiev', args=(bot,))
+    langs = await get_query(f"SELECT lang, json FROM DAYS_langs")
+    result_dict = {item['lang']: item['json'] for item in langs}
+    config.lang_instance.initialize(result_dict)
 
 if __name__ == '__main__':
     scheduler.start()
