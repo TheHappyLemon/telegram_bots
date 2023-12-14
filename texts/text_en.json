@@ -3,6 +3,13 @@
         "created": "Done!\n\nNotification succesfully created",
         "no_notifics": "Event <event_name> has 0 notifications! You should add a few 😉",
         "choose": "Choose notification to delete from event <event_name>",
-        "deleted": "Notification succesfully deleted!"
+        "deleted": "Notification succesfully deleted!",
+        "day_0":"Today is",
+        "day_1":"Tomorrow is",
+        "day_2":"In two days is",
+        "day_3":"In three days is",
+        "week_1":"In one week is",
+        "week_2":"In two weeks is",
+        "month_1":"In three is"
     }
 }

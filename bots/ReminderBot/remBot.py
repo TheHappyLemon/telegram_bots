@@ -1,13 +1,8 @@
-from re import sub
 from remUtils import *
 from aiogram import Bot, Dispatcher, types, executor
 from remUtils import *
-from datetime import date
-from time import sleep
-import random
-import string
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatActions
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ChatActions
+from dateutil.relativedelta import relativedelta
 import traceback
 
 @dp.message_handler(content_types=[types.ContentType.DOCUMENT])
@@ -57,11 +52,25 @@ async def start(message: types.Message):
     await send_new_static_msg(usr_id, default_keyboard_text, keyboard)
     await delete_all_messages(usr_id)
 
+
+@dp.message_handler(commands=['insert'])
+async def start(message: types.Message):
+    days = await get_query(f"SELECT * FROM DAYS")
+    a = []
+    for day in days:
+        a.append(f"INSERT INTO DAYS_notifications(day_id, when_date, when_time) VALUES({day['id']}, '0 day', '07 : 00')")
+        a.append(f"INSERT INTO DAYS_notifications(day_id, when_date, when_time) VALUES({day['id']}, '1 day', '12 : 00')")
+        a.append(f"INSERT INTO DAYS_notifications(day_id, when_date, when_time) VALUES({day['id']}, '1 week', '12 : 00')")
+    await insert_data(a)
+    await send_msg(message.from_user.id, f"Done")
+
+
 @dp.message_handler(commands=['clear'])
 async def delete_messages(message: types.Message):
     await handle_user(message)
     await bot.send_chat_action(message.from_user.id, ChatActions.TYPING)
     await delete_all_messages(message.chat.id)
+    
     
 async def calculate_yearly(bot : Bot):
     # calcualte only events that are irregular
@@ -77,7 +86,38 @@ async def recalculate(bot : Bot):
         response = "Daily recalculation result:\n\n" + response
         await send_msg(chat, response)
 
-async def remind(bot : Bot):
+async def calculate_dates(delta_days : int = 0):
+    config.day_0 = await get_today() + timedelta(delta_days)
+    config.day_1 = config.day_0 + timedelta(days=1)
+    config.day_2 = config.day_0 + timedelta(days=2)
+    config.day_3 = config.day_0 + timedelta(days=3)
+    config.week_1 = config.day_0 + timedelta(weeks=1)
+    config.week_2 = config.day_0 + timedelta(weeks=2)
+    config.month_1 = config.day_0 + relativedelta(months=1)
+    print(config.day_3)
+
+async def check_day_new(day : dict) -> str:
+    date = datetime.strptime(day['day'], "%Y-%m-%d").date()
+    # I store path to text, because I dont know which language users use
+    if date == config.day_0:
+        path = 'DAYS_notifications.day_0'
+    elif date == config.day_1:
+        path = 'DAYS_notifications.day_1'
+    elif date == config.day_2:
+        path = 'DAYS_notifications.day_2'
+    elif date == config.day_3:
+        path = 'DAYS_notifications.day_3'
+    elif date == config.week_1:
+        path = 'DAYS_notifications.week_1'
+    elif date == config.week_2:
+        path = 'DAYS_notifications.week_2'
+    elif date == config.month_1:
+        path = 'DAYS_notifications.month_1'
+    if path > "":
+        return path, f"Attention! <text_whn> " + await get_day_info(day=day, frmt=1)
+    return "", ""
+
+async def remind_new():
     '''
     msgs structure:
     {
@@ -88,31 +128,32 @@ async def remind(bot : Bot):
         ...
     }
     '''
-    # add_info = await get_query(f"SELECT day_start, day_end FROM CONTINIOUSDAY_prm WHERE CONTINIOUSDAY_prm.day_id = {day['id']}")
-    days = await get_query('''
-        SELECT * FROM DAYS
-        LEFT JOIN link ON (DAYS.id = link.id1)
-        LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id = CONTINIOUSDAY_prm.day_id)
-        WHERE link.format = 'days' AND link.opt = 'look' ORDER BY day
+    time_first = await get_today_time("%H : %M")
+    time_second = await get_today_time("%H : %M", timedelta(minutes=5))
+    days = await get_query(f'''
+    SELECT DAYS.*, USERS.language AS language, USERS.tg_id AS usr_id
+    FROM DAYS_notifications
+    LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
+    LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id)
+    LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
+    LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
+    WHERE when_time = '{time_first}'
+    AND link.format = 'days' AND link.opt = 'look' ORDER BY day
     ''')
     msgs = {}
-    today = await get_today()
-    tomorrow = today + timedelta(days=1)
-    week = today + timedelta(days=7)
     for day in days:
         if day['day'] == None:
-            continue
-        answ = await check_day(day, today, tomorrow, week)
-        if answ > "":
+           continue
+        path, answ = await check_day_new(day)
+        if path != "":
             if msgs.get(day['id']) == None:
                 msgs[day['id']] = {}
-                msgs[day['id']]['msg'] = answ
+                msgs[day['id']]['msg'] = answ.replace('<text_whn>', config.lang_instance.get_text(day['language'], path))
                 msgs[day['id']]['users'] = []
             msgs[day['id']]['users'].append(day['usr_id'])
     for event in msgs:
         for usr_id in msgs[event]['users']:
             await send_msg(usr_id, msgs[event]['msg'])
-
 
 @dp.message_handler()
 async def echo(message: types.Message):
@@ -261,14 +302,19 @@ async def echo(message: types.Message):
 
 
 async def on_startup(dp : Dispatcher):
-    scheduler.add_job(remind, 'cron', hour='8', minute='00', timezone='Europe/Kiev', args=(bot, ))
-    scheduler.add_job(remind, 'cron', hour='18', minute='00', timezone='Europe/Kiev', args=(bot, ))
-    # scheduler.add_job(remind, 'cron', second = '*', args=(bot,))
+    # regular functions
+    scheduler.add_job(remind_new, 'cron', minute='*/5', timezone='Europe/Kiev')
     scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
     scheduler.add_job(recalculate, 'cron', hour='0', minute='01', timezone='Europe/Kiev', args=(bot,))
+    # launch at 23 58, so remind that is laucnhed at 00 00 global date variable is already tommorow
+    # TODO change it if I allow select time at any minute not at */5
+    scheduler.add_job(calculate_dates, 'cron', hour='23', minute='58', timezone='Europe/Kiev', args=(1,))
+    # load languages
     langs = await get_query(f"SELECT lang, json FROM DAYS_langs")
     result_dict = {item['lang']: item['json'] for item in langs}
     config.lang_instance.initialize(result_dict)
+    # global dates
+    await calculate_dates(0)
 
 if __name__ == '__main__':
     scheduler.start()

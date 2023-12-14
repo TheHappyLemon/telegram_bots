@@ -667,7 +667,7 @@ async def pick_feedback_adm(**kwargs):
     usr_id = kwargs['usr_id']
     feedbacks = await get_query("SELECT * FROM FEEDBACK LEFT JOIN USERS ON (FEEDBACK.user_id = USERS.tg_id) ORDER BY whn")
     msg = f"Choose a feedback"
-    keyboard = InlineKeyboardMarkup(row_width=3)
+    keyboard = InlineKeyboardMarkup(row_width=2)
     for feedback in feedbacks:
         sts, additional = await get_feedback_text(feedback['sts'])
         txt = f"{feedback['name']} : status '{sts}', left on {feedback['whn']}"
@@ -1569,9 +1569,12 @@ async def insert_data(queries: list):
     db.close()
 
 async def get_today():
-    # was needed for tests mainly
-    #return datetime.strptime("2023-07-09", "%Y-%m-%d").date()
     return datetime.now(timezone('Europe/Kiev')).date()
+
+async def get_today_time(format : str, delta : timedelta = None):
+    if delta == None:
+        delta = timedelta(minutes=0)
+    return (datetime.now(timezone('Europe/Kiev')) + delta).strftime(format)
 
 async def get_infinite_date():
     return datetime(9999, 1, 1).date()
@@ -1598,20 +1601,6 @@ async def reschedule(day : dict) -> None:
     querris = []
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
-
-async def check_day(day : dict, today : date, tomorrow : date, week : date) -> str:
-    date = datetime.strptime(day['day'], "%Y-%m-%d").date()
-    notify = ""
-    notfiy_whn = ""
-    if date == tomorrow:
-        notfiy_whn = f"Tomorrow is"
-    elif date == week:
-        notfiy_whn =  f"In 7 days there is"
-    elif date == today:
-        notfiy_whn = f"Today is"
-    if notfiy_whn > "":
-        notify = f"Attention! {notfiy_whn} " + await get_day_info(day=day, frmt=1)
-    return notify
 
 async def get_day_info(day : dict, frmt : int):
     date = day['day']

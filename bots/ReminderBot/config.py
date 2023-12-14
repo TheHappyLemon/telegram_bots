@@ -44,6 +44,15 @@ class Lang_class:
             # Lol?
             raise PhraseNotFound
 
-
+# language instance
 global lang_instance
 lang_instance = Lang_class()
+
+# notification options. Make them global, so they are calculated once a day
+global day_0
+global day_1
+global day_2
+global day_3
+global week_1
+global week_2
+global month_1
