@@ -99,6 +99,7 @@ async def calculate_dates(delta_days : int = 0):
 async def check_day_new(day : dict) -> str:
     date = datetime.strptime(day['day'], "%Y-%m-%d").date()
     # I store path to text, because I dont know which language users use
+    path = ""
     if date == config.day_0:
         path = 'DAYS_notifications.day_0'
     elif date == config.day_1:
