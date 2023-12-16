@@ -988,7 +988,7 @@ async def get_help(**kwargs):
 async def calc_force(**kwargs):
     usr_id = kwargs['usr_id']
     reply_markup = await get_back_btn(keyboard_id=6)
-    response = await calculate_events([0,1,2], [])
+    response = await calculate_events(formats=[0,1,2])
     response = "Events were forcefully recaulculated:\n\n" +  response
     await edit_message(usr_id, response, reply_markup)
     return ""
@@ -1568,8 +1568,10 @@ async def insert_data(queries: list):
     db.commit()  # commit the changes made to the database
     db.close()
 
-async def get_today():
-    return datetime.now(timezone('Europe/Kiev')).date()
+async def get_today(delta : timedelta = None):
+    if delta == None:
+        delta = timedelta(days=0)
+    return (datetime.now(timezone('Europe/Kiev')) + delta).date()
 
 async def get_today_time(format : str, delta : timedelta = None):
     if delta == None:
@@ -1621,12 +1623,13 @@ async def isYes(text : str):
     return (text in ['y', 'ye', 'yes', 'yeah'])
 
 
-async def calculate_events(formats : list, ids : list = []):
+async def calculate_events(formats : list, ids : list = [], delta_days : timedelta = None):
     # 0 - regular events
     # 1 - irregular events
+    # 2 - continious events
     response = ""
     queris = []
-    vToday = await get_today()
+    vToday = await get_today(delta_days)
     if 0 in formats:
         # if some events were not rescheduled by mistake.
         # For example, bot was offline
@@ -1659,7 +1662,6 @@ async def calculate_events(formats : list, ids : list = []):
                 continue
             if day['day'] == None:
                 continue
-            vToday = await get_today()
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             vStart = day['day_start']
             vEnd = day['day_end']

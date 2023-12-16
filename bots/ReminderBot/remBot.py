@@ -74,15 +74,15 @@ async def delete_messages(message: types.Message):
     
 async def calculate_yearly(bot : Bot):
     # calcualte only events that are irregular
-    response = await calculate_events([1])
+    response = await calculate_events(formats=[1])
     response = "This is result from yearly event calculation!:\n\n" + response
     await send_msg(chat, response)
 
-async def recalculate(bot : Bot):
+async def recalculate(delta_days : timedelta):
     # This function checks if a regular event that needs to be rescheduled, was not and reschedules it.
     # This function also reschedules all continious event if needed
-    response = await calculate_events([0,2])
-    if  response > "":
+    response = await calculate_events(formats=[0,2], delta_days=delta_days)
+    if response > "":
         response = "Daily recalculation result:\n\n" + response
         await send_msg(chat, response)
 
@@ -100,20 +100,27 @@ async def check_day_new(day : dict) -> str:
     date = datetime.strptime(day['day'], "%Y-%m-%d").date()
     # I store path to text, because I dont know which language users use
     path = ""
-    if date == config.day_0:
-        path = 'DAYS_notifications.day_0'
-    elif date == config.day_1:
-        path = 'DAYS_notifications.day_1'
-    elif date == config.day_2:
-        path = 'DAYS_notifications.day_2'
-    elif date == config.day_3:
-        path = 'DAYS_notifications.day_3'
-    elif date == config.week_1:
-        path = 'DAYS_notifications.week_1'
-    elif date == config.week_2:
-        path = 'DAYS_notifications.week_2'
-    elif date == config.month_1:
-        path = 'DAYS_notifications.month_1'
+    if day['when_date'] == '0 day':
+        if date == config.day_0:
+            path = 'DAYS_notifications.day_0'
+    elif day['when_date'] == '1 day':
+        if date == config.day_1:
+            path = 'DAYS_notifications.day_1'
+    elif day['when_date'] == '2 day':
+        if date == config.day_2:
+            path = 'DAYS_notifications.day_2'
+    elif day['when_date'] == '3 day':
+        if date == config.day_3:
+            path = 'DAYS_notifications.day_3'
+    elif day['when_date'] == '1 week':
+        if date == config.week_1:
+            path = 'DAYS_notifications.week_1'
+    elif day['when_date'] == '2 week':
+        if date == config.week_2:
+            path = 'DAYS_notifications.week_2'
+    elif day['when_date'] == '1 month':
+        if date == config.month_1:
+            path = 'DAYS_notifications.month_1'
     if path > "":
         return path, f"Attention! <text_whn> " + await get_day_info(day=day, frmt=1)
     return "", ""
@@ -130,9 +137,8 @@ async def remind_new():
     }
     '''
     time_first = await get_today_time("%H : %M")
-    time_second = await get_today_time("%H : %M", timedelta(minutes=5))
     days = await get_query(f'''
-    SELECT DAYS.*, USERS.language AS language, USERS.tg_id AS usr_id
+    SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date
     FROM DAYS_notifications
     LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
     LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id)
@@ -151,7 +157,7 @@ async def remind_new():
                 msgs[day['id']] = {}
                 msgs[day['id']]['msg'] = answ.replace('<text_whn>', config.lang_instance.get_text(day['language'], path))
                 msgs[day['id']]['users'] = []
-            msgs[day['id']]['users'].append(day['usr_id'])
+            msgs[day['id']]['users'].append(day['tg_id'])
     for event in msgs:
         for usr_id in msgs[event]['users']:
             await send_msg(usr_id, msgs[event]['msg'])
@@ -306,10 +312,9 @@ async def on_startup(dp : Dispatcher):
     # regular functions
     scheduler.add_job(remind_new, 'cron', minute='*/5', timezone='Europe/Kiev')
     scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
-    scheduler.add_job(recalculate, 'cron', hour='0', minute='01', timezone='Europe/Kiev', args=(bot,))
-    # launch at 23 58, so remind that is laucnhed at 00 00 global date variable is already tommorow
-    # TODO change it if I allow select time at any minute not at */5
-    scheduler.add_job(calculate_dates, 'cron', hour='23', minute='58', timezone='Europe/Kiev', args=(1,))
+    # launch at 23 57 with arg 1 = timedelta(days), so reschedule dates on tommorow, so notification at 00:00 works correctly
+    scheduler.add_job(recalculate, 'cron', hour='23', minute='57', timezone='Europe/Kiev', args=(timedelta(days=1),))
+    scheduler.add_job(calculate_dates, 'cron', hour='23', minute='57', timezone='Europe/Kiev', args=(1,))
     # load languages
     langs = await get_query(f"SELECT lang, json FROM DAYS_langs")
     result_dict = {item['lang']: item['json'] for item in langs}

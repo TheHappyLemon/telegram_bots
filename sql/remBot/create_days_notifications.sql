@@ -5,7 +5,7 @@ CREATE TABLE DAYS_notifications (
     when_time VARCHAR(7) NOT NULL,
     PRIMARY KEY (id),
     UNIQUE (day_id, when_date, when_time),
-    FOREIGN KEY (day_id) REFERENCES DAYS(id)
+    FOREIGN KEY (day_id) REFERENCES DAYS(id) ON DELETE CASCADE
 );
 
 -- for some reason when there is on cascade delete option in foreign key
