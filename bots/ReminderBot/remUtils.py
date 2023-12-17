@@ -914,13 +914,29 @@ async def acces_who(**kwargs):
     await edit_message(usr_id=usr_id, text=msg, reply_markup=keyboard, parse_mode="Markdown")
     return ""
 
+async def stop_redact(**kwargs):
+    await stop_acting(kwargs['usr_id'], kwargs['event_id'], kwargs['event_name'], kwargs['usr_lang'], 'modify', 10)
+    return ""
+
+async def stop_subbing(**kwargs):
+    await stop_acting(kwargs['usr_id'], kwargs['event_id'], kwargs['event_name'], kwargs['usr_lang'], 'look', 1)
+    return ""
+
+async def stop_acting(usr_id : str, event_id: str, event_name: str, usr_lang: str, action : str, group : int):
+    # Only users that have acces to event (link.opt = 'modify') should get here!
+    # Therefore I dont check for it in this function
+    day_data = await get_query(f"SELECT id FROM link WHERE id1 = {event_id} AND opt = '{action}' AND format = 'days' ")
+    msg = ""
+    if len(day_data) == 1:
+        msg = config.lang_instance.get_text(usr_lang, f'MODIFY.{action}_warning').replace('<event_name>', event_name)
+    await confirm_choice(usr_id, event_id + ";" + action + ";" + str(len(day_data) == 1), group, msg)
 
 async def delete_event(**kwargs):
     # Only users that have acces to event (link.opt = 'modify') should get here!
     # Therefore I dont check for it in this function
     usr_id = kwargs['usr_id']
     event_id = kwargs['event_id']
-    await confirm_choice(usr_id, event_id, 2)
+    await confirm_choice(usr_id, event_id, 10)
     return ""
 
 async def pick_event_mod(**kwargs):
@@ -942,7 +958,7 @@ async def pick_event(usr_id : int, opt : str):
     ''')
     if len(days) == 0:
         msg = "You dont have right to modify any event"
-        keyboard  = await get_back_btn(keyboard_id=0)
+        keyboard  = await get_back_btn(keyboard_id=1)
     else:
         msg = f"Choose event that you want to modify"
         keyboard = InlineKeyboardMarkup(row_width=3)
@@ -953,7 +969,7 @@ async def pick_event(usr_id : int, opt : str):
             keyboard.insert(button)
         # callback_data = <TYPE> ; <nextkeyboard>or<function> ; <currentKeyboard> ; <group_num><sts_user>
         #data = "BUTTON_PRESSED" + ";" + data + ";" + button_json['group_num'] + ";" + last_keyboard + ";" + button_json['sts_user']
-        keyboard = await add_back_btn(10, keyboard)
+        keyboard = await add_back_btn(1, keyboard)
     await edit_message(usr_id, msg, keyboard)
     return ""
 
@@ -1020,26 +1036,16 @@ async def handle_button_press(callback_query: types.CallbackQuery):
         usr_lang = user_info[0]['language']
         keyboard = None
         if action_type == "EVENT_CHOOSEN":
-            if user_sts == 'EVENTS_PICK_U' or user_sts == 'EVENTS_PICK_R':
-                day_data = await get_query(f"SELECT link.id, DAYS.name FROM link INNER JOIN DAYS ON (DAYS.id = link.id1) WHERE id1 = {callback_data[1]} AND opt = '{callback_data[2]}' AND link.format = 'days'")
-                msg = ""
-                if len(day_data) == 1:
-                    msg = "IMPORTANT!\n\nYou are the only " + ("subscriber" if callback_data[2] == 'look' else "redactor") + f" of event {day_data[0]['name']}"
-                    msg = msg + '\nIf you continue, this event will be deleted!'
-                await confirm_choice(usr_id, callback_data[1] + ";" + callback_data[2] + ";" + str(len(day_data) == 1), 1, msg)
-            elif user_sts == 'EVENTS_PICK_D' or user_sts == 'EVENTS_PICK_A' or user_sts == 'EVENTS_PICK_N':
-                if user_sts == 'EVENTS_PICK_D':
-                    group = 2
-                elif user_sts == 'EVENTS_PICK_A':
-                    group = 3
-                elif user_sts == 'EVENTS_PICK_N':
-                    group = 11
-                # save event name that user has choosen
-                queries.append(f"UPDATE USERS SET last_keyboard = {group} WHERE tg_id = {usr_id};")
-                queries.append(f"UPDATE USERS SET sts_chat      = 'IDLE'  WHERE tg_id = {usr_id};")
-                queries.append(f"UPDATE USERS SET event_id      = {callback_data[1]} WHERE tg_id = {usr_id};")
-                await insert_data(queries)
-                keyboard = await get_keyboard(group_id=group, user_id=usr_id)
+            # save event name that user has choosen
+            queries.append(f"UPDATE USERS SET event_id      = {callback_data[1]} WHERE tg_id = {usr_id};")
+            await insert_data(queries)
+            # load keyboard with modifying options
+            if user_sts == "EVENTS_PICK_U":
+                day_name = await get_query(f"SELECT name FROM DAYS WHERE id = {callback_data[1]}")
+                day_name = day_name[0]['name']
+                await stop_subbing(usr_id=usr_id, event_id=callback_data[1], event_name=day_name, usr_lang=usr_lang)
+            else:
+                keyboard = await get_keyboard(group_id=10, user_id=usr_id)
                 await edit_message(usr_id, default_keyboard_text, keyboard)
         if action_type == "INVITATION_MY_CHOOSEN":
             queries.append(f"UPDATE USERS SET last_keyboard = 7 WHERE tg_id = {usr_id};")
@@ -1201,8 +1207,8 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                 else:
                     msg = "Action aborted!"
             elif user_sts == 'MODIFY_DEL':
-                group = 1
                 if callback_data[1].lower() == "yes":
+                    group = 1
                     queries.append(f"DELETE FROM DAYS WHERE id = {callback_data[2]}")
                     queries.append(f"UPDATE USERS SET event_id = NULL WHERE tg_id = {usr_id}")
                     queries.append(f"UPDATE USERS SET last_keyboard = 1 WHERE tg_id = {usr_id}")
@@ -1231,6 +1237,7 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                         for listener in listeners:
                             await send_notification(listener['usr_id'], system_name, "Notification", notification, "Markdown")
                 else:
+                    group = 10
                     msg = "Action aborted!"
             elif user_sts == "MODIFY_NAME":
                 group = 5

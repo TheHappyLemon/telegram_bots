@@ -11,5 +11,9 @@
         "week_1":"In one week is",
         "week_2":"In two weeks is",
         "month_1":"In three is"
+    },
+    "MODIFY":{
+        "modify_warning":"IMPORTANT!\n\nYou are the only redactor of event <event_name>\nIf you continue, this event will be deleted!",
+        "look_warning":"IMPORTANT!\n\nYou are the only subscriber of event <event_name>\nIf you continue, this event will be deleted!"
     }
 }
