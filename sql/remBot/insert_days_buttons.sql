@@ -1,9 +1,10 @@
---   MAIN KEYBOARD                                                                               id   text         func                         group next ord prnt  accs
+--   MAIN KEYBOARD                                                                               id   text         func                            group next ord prnt  accs
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(1 , '🎉My events'     ,  NULL           , 0, 1   , 0, NULL, 0 , 'IDLE');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(43, '✉️My invitations',  NULL           , 0, 7   , 1, NULL, 0 , 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(24, '⚙️My settings'   ,  NULL           , 0, 5   , 2, NULL, 0 , 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(7 , '🧞‍♂Admin'         ,  NULL           , 0, 6   , 3, NULL, 10, 'IDLE');
-INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(59, '🆘️Help'          ,  'get_help'     , 0, NULL, 4, NULL, 0 , 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(79, '🌐Public events' ,  NULL           , 0, 12  , 2, NULL, 0 , 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(24, '⚙️My settings'   ,  NULL           , 0, 5   , 3, NULL, 0 , 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(7 , '🧞‍♂Admin'         ,  NULL           , 0, 6   , 4, NULL, 10, 'IDLE');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(59, '🆘️Help'          ,  'get_help'     , 0, NULL, 5, NULL, 0 , 'IDLE');
 --   EVNT KEYBOARD                                                                                          id   text                   func         group next ord prnt  accs
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(2  , '📝Print events'   , 'print_events'   , 1, NULL, 0, 1   , 0, 'IDLE');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(71 , '📤Export to CSV'  , 'export_to_csv'  , 1, NULL, 1, 1   , 0, 'IDLE');
@@ -76,3 +77,7 @@ INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id,
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user, showif) VALUES(52, '👤Invite subscriber', 'invite_send_look'  , 8, NULL, 0, 15, 0, 'INVITE_SEND_LOOK', 'is_event_private');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user)         VALUES(53, '✏️Invite redactor'  , 'invite_send_modify', 8, NULL, 1, 15, 0, 'INVITE_SEND_MODF');
 INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user)         VALUES(54, '🔙Back'             , NULL                , 8, 3   , 2, 15, 0, 'IDLE');
+--   MODIFY EVENT KEYBOARD                                                                                  id   text          func          group nxt ord prnt accs
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(80, '🔍Find by name'       , 'find_by_name', 12, NULL, 0, 79, 0, 'FIND_BY_NAME');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(81, '🔍Find by description', 'find_by_desc', 12, NULL, 1, 79, 1, 'FIND_BY_DESC');
+INSERT INTO DAYS_buttons (id, text, func, group_num, nextGroup, ordr, parent_id, accs_lvl, sts_user) VALUES(82, '🔙Back'            , NULL          , 12, 0    , 1, 79, 2, 'IDLE');  

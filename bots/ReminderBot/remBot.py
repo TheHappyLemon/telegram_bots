@@ -36,7 +36,7 @@ async def handle_document(message: types.Message):
 @dp.message_handler(commands=['ping'])
 async def ping(message: types.Message):
     usr_id = message.from_user.id
-    if message.from_user.id != chat:
+    if message.from_user.id != int(chat):
         return
     await send_msg(message.from_user.id, f"Alive! {usr_id}")
 
@@ -51,19 +51,6 @@ async def start(message: types.Message):
     keyboard  = await get_keyboard(group_id=0, user_id = usr_id)
     await send_new_static_msg(usr_id, default_keyboard_text, keyboard)
     await delete_all_messages(usr_id)
-
-
-@dp.message_handler(commands=['insert'])
-async def start(message: types.Message):
-    days = await get_query(f"SELECT * FROM DAYS")
-    a = []
-    for day in days:
-        a.append(f"INSERT INTO DAYS_notifications(day_id, when_date, when_time) VALUES({day['id']}, '0 day', '07 : 00')")
-        a.append(f"INSERT INTO DAYS_notifications(day_id, when_date, when_time) VALUES({day['id']}, '1 day', '12 : 00')")
-        a.append(f"INSERT INTO DAYS_notifications(day_id, when_date, when_time) VALUES({day['id']}, '1 week', '12 : 00')")
-    await insert_data(a)
-    await send_msg(message.from_user.id, f"Done")
-
 
 @dp.message_handler(commands=['clear'])
 async def delete_messages(message: types.Message):
@@ -172,7 +159,6 @@ async def echo(message: types.Message):
     if user_sts != "MODIFY_AMT":
         # integer input
         input = await escape_mysql(message.text.strip().lower())
-    # input = await parse_msg(message.text.strip().lower())
     keyboard = None
     sts_chat = user_sts['sts_chat']
     clear_chat = True
@@ -290,6 +276,50 @@ async def echo(message: types.Message):
                 feedback_sender = feedback_sender[0]
                 clear_chat = False
                 await send_notification(feedback_sender['user_id'], system_name, "Notification", f"Feedback that you left on '{feedback_sender['whn']}' was replied to! Go to My settings -> print feedback. Now it has status 'answered'")
+        elif sts_chat == "FIND_BY_NAME":
+            # TODO maybe skip events to which user is already subscribed?
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+            days = await get_query(f'''
+                SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+                FROM DAYS
+                LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+                LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+                LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+                WHERE DAYS.acces = 'public' AND DAYS.name LIKE '%{input}%'
+                ORDER BY DAYS.day;
+            ''')
+            msg = f"There are {len(days)} events that match your filter:\n\n"
+            reply_markup = InlineKeyboardMarkup()
+            for day in days:
+                row = await get_day_row_info(day)
+                msg = msg + row + "\n\n"
+                button = InlineKeyboardButton(text=str(day['USERS.name']) + ' - ' + day['name'], callback_data=f'PUB_EVNT_CHSN;{day["id"]};{day["name"]}')
+                reply_markup.insert(button)
+            reply_markup = await add_back_btn(12, reply_markup)
+            await edit_message(usr_id, msg, reply_markup, "Markdown")
+            return ""
+        elif sts_chat == "FIND_BY_DESC":
+            # TODO maybe skip events to which user is already subscribed?
+            keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
+            days = await get_query(f'''
+                SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+                FROM DAYS
+                LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+                LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+                LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+                WHERE DAYS.acces = 'public' AND DAYS.descr LIKE '%{input}%'
+                ORDER BY DAYS.day;
+            ''')
+            msg = f"There are {len(days)} events that match your filter:\n\n"
+            reply_markup = InlineKeyboardMarkup()
+            for day in days:
+                row = await get_day_row_info(day)
+                msg = msg + row + "\n\n"
+                button = InlineKeyboardButton(text=str(day['USERS.name']) + ' - ' + day['name'], callback_data=f'PUB_EVNT_CHSN;{day["id"]};{day["name"]}')
+                reply_markup.insert(button)
+            reply_markup = await add_back_btn(12, reply_markup)
+            await edit_message(usr_id, msg, reply_markup, "Markdown")
+            return ""
         else:
             msg = "Aaaaargh, unknown command"
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)

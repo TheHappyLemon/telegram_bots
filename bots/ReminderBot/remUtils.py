@@ -394,13 +394,13 @@ async def print_event(**kwargs):
 
 async def get_back_btn(keyboard_id : int):
     keyboard = InlineKeyboardMarkup()
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;{keyboard_id};{keyboard_id};{keyboard_id};IDLE')
+    button = InlineKeyboardButton(text='🔙Back', callback_data=f'BUTTON_PRESSED;{keyboard_id};{keyboard_id};{keyboard_id};IDLE')
     # use add instead of insert so back button always takes full last row
     keyboard.add(button)
     return keyboard
 
 async def add_back_btn(keyboard_id : int, keyboard : InlineKeyboardMarkup):
-    button = InlineKeyboardButton(text='Back', callback_data=f'BUTTON_PRESSED;{keyboard_id};{keyboard_id};{keyboard_id};IDLE')
+    button = InlineKeyboardButton(text='🔙Back', callback_data=f'BUTTON_PRESSED;{keyboard_id};{keyboard_id};{keyboard_id};IDLE')
     # use add instead of insert so back button always takes full last row
     keyboard.add(button)
     return keyboard
@@ -845,6 +845,16 @@ async def invite_send_look(**kwargs):
 async def invite_send_modify(**kwargs):
     reply_markup = await get_back_btn(keyboard_id=8)
     await edit_message(usr_id=kwargs['usr_id'], text="Input user name you want to become a redactor", reply_markup=reply_markup)
+
+async def find_by_name(**kwargs):
+    usr_lang = kwargs['usr_lang']
+    reply_markup = await get_back_btn(keyboard_id=12)
+    await edit_message(usr_id=kwargs['usr_id'], text=config.lang_instance.get_text(usr_lang, f'PUBLIC.by_name'), reply_markup=reply_markup)
+
+async def find_by_desc(**kwargs):
+    usr_lang = kwargs['usr_lang']
+    reply_markup = await get_back_btn(keyboard_id=12)
+    await edit_message(usr_id=kwargs['usr_id'], text=config.lang_instance.get_text(usr_lang, f'PUBLIC.by_desc'), reply_markup=reply_markup)
 
 async def pick_subscriber(**kwargs):
     usr_id = kwargs['usr_id']
@@ -1320,6 +1330,17 @@ async def handle_button_press(callback_query: types.CallbackQuery):
         elif action_type == "SUBSCRIBER_CHOOSEN":
             # now only for status SUBSCRIBER_RMV
             await confirm_choice(usr_id, callback_data[1], 3)
+        elif action_type == "PUB_EVNT_CHSN":
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            button = InlineKeyboardButton(text="✅Subscribe to", callback_data=f"SUBSCRIBE_TO;{callback_data[1]};{callback_data[2]}")
+            keyboard.insert(button)
+            keyboard = await add_back_btn(12, keyboard)
+            await edit_message(usr_id, config.lang_instance.get_text(usr_lang, "PUBLIC.action").replace('<event_name>', callback_data[2]), keyboard)
+        elif action_type == "SUBSCRIBE_TO":
+            queries.append(f"INSERT INTO link(usr_id, id1, opt, format) VALUES({usr_id}, {callback_data[1]}, 'look', 'days')")
+            keyboard = await get_back_btn(12)
+            await insert_data(queries)
+            await edit_message(usr_id, config.lang_instance.get_text(usr_lang, "PUBLIC.confirm").replace('<event_name>', callback_data[2]), keyboard)
         elif action_type == "BUTTON_PRESSED":
             # save where user is right now
             queries.append(f"UPDATE USERS SET last_keyboard = {callback_data[3]}  WHERE tg_id = {usr_id};")
@@ -1357,6 +1378,10 @@ async def handle_button_press(callback_query: types.CallbackQuery):
         await edit_message(usr_id, msg, keyboard)
 
 async def send_msg(to : int, msg : str, parse_mode : str = None, disable_web_page_preview : bool = True, reply_markup : InlineKeyboardMarkup = None):
+    # TODO telegram bot API has a limit of 100 buttons for inline keyboard.
+    # It is possible to add more to an inline keyboard object, but only first 100 will be displayed.
+    # One solution is to ask for <N> records and add '<' '>' buttons to ask next or previous <N> records
+    # **************************************************************************************************
     # maximum length of a telegram message is 4096 symbols. if msg is too big:
     # 1 - find last newline in given interval (from <i> to <i + max_len>)
     # 2 - create chunk from <i> to <\n pos>
@@ -1398,6 +1423,9 @@ async def send_msg(to : int, msg : str, parse_mode : str = None, disable_web_pag
     return sent_msg
 
 async def edit_message(usr_id : int, text : str, reply_markup : InlineKeyboardMarkup = None, parse_mode : str = None):
+    # TODO telegram bot API has a limit of 100 buttons for inline keyboard.
+    # It is possible to add more to an inline keyboard object, but only first 100 will be displayed.
+    # One solution is to ask for <N> records and add '<' '>' buttons to ask next or previous <N> records
     message_id = await get_query(f"SELECT days_msg_id FROM USERS WHERE tg_id = {usr_id}")
     message_id = message_id[0]['days_msg_id']
     # if there is no msg id in DB
