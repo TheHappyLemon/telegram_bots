@@ -153,7 +153,7 @@ async def remind_new():
 async def echo(message: types.Message):
     usr_id = message.from_user.id
     await handle_user(message)
-    user_sts = await get_query(f"SELECT sts_chat, last_keyboard FROM USERS WHERE tg_id = {usr_id}")
+    user_sts = await get_query(f"SELECT sts_chat, last_keyboard, language FROM USERS WHERE tg_id = {usr_id}")
     user_sts = user_sts[0]
     querries = []
     if user_sts != "MODIFY_AMT":
@@ -161,6 +161,7 @@ async def echo(message: types.Message):
         input = await escape_mysql(message.text.strip().lower())
     keyboard = None
     sts_chat = user_sts['sts_chat']
+    usr_lang = user_sts['language']
     clear_chat = True
     querries.append(f"UPDATE USERS SET sts_chat= 'IDLE' WHERE tg_id = {usr_id};")
     try:
@@ -277,9 +278,22 @@ async def echo(message: types.Message):
                 clear_chat = False
                 await send_notification(feedback_sender['user_id'], system_name, "Notification", f"Feedback that you left on '{feedback_sender['whn']}' was replied to! Go to My settings -> print feedback. Now it has status 'answered'")
         elif sts_chat == "FIND_BY_NAME":
-            # TODO maybe skip events to which user is already subscribed?
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
-            days = await get_query(f'''
+            hide_subscribed = True
+            # just in case I decide to make a setting to allow see all records
+            if hide_subscribed:
+                query = f'''
+                SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+                FROM DAYS
+                LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+                LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+                LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+                WHERE DAYS.acces = 'public' AND DAYS.name LIKE '%{input}%'
+                AND NOT EXISTS (SELECT 1 FROM link WHERE link.usr_id = {usr_id} AND link.id1 = DAYS.id AND link.opt = 'look' AND link.format = 'days')
+                ORDER BY DAYS.day;
+                '''
+            else:
+                query = f'''
                 SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
                 FROM DAYS
                 LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
@@ -287,8 +301,9 @@ async def echo(message: types.Message):
                 LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
                 WHERE DAYS.acces = 'public' AND DAYS.name LIKE '%{input}%'
                 ORDER BY DAYS.day;
-            ''')
-            msg = f"There are {len(days)} events that match your filter:\n\n"
+                '''
+            days = await get_query(query)
+            msg = config.lang_instance.get_text(usr_lang, 'PUBLIC.msg_res').replace('<total>', str(len(days)))
             reply_markup = InlineKeyboardMarkup()
             for day in days:
                 row = await get_day_row_info(day)
@@ -299,18 +314,32 @@ async def echo(message: types.Message):
             await edit_message(usr_id, msg, reply_markup, "Markdown")
             return ""
         elif sts_chat == "FIND_BY_DESC":
-            # TODO maybe skip events to which user is already subscribed?
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
-            days = await get_query(f'''
-                SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
-                FROM DAYS
-                LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
-                LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
-                LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
-                WHERE DAYS.acces = 'public' AND DAYS.descr LIKE '%{input}%'
-                ORDER BY DAYS.day;
-            ''')
-            msg = f"There are {len(days)} events that match your filter:\n\n"
+            hide_subscribed = True
+            # just in case I decide to make a setting to allow see all records
+            if hide_subscribed:
+                query = f'''
+                    SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+                    FROM DAYS
+                    LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+                    LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+                    LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+                    WHERE DAYS.acces = 'public' AND DAYS.descr LIKE '%{input}%'
+                    AND NOT EXISTS (SELECT 1 FROM link WHERE link.usr_id = {usr_id} AND link.id1 = DAYS.id AND link.opt = 'look' AND link.format = 'days')
+                    ORDER BY DAYS.day;
+                '''
+            else:
+                query = f'''
+                    SELECT DAYS.*, USERS.*, WEEKDAY_prm.*, CONTINIOUSDAY_prm.*
+                    FROM DAYS
+                    LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
+                    LEFT JOIN WEEKDAY_prm ON (DAYS.id =  WEEKDAY_prm.day_id)
+                    LEFT JOIN CONTINIOUSDAY_prm ON (DAYS.id =  CONTINIOUSDAY_prm.day_id)
+                    WHERE DAYS.acces = 'public' AND DAYS.descr LIKE '%{input}%'
+                    ORDER BY DAYS.day;
+                '''
+            days = await get_query(query)
+            msg = config.lang_instance.get_text(usr_lang, 'PUBLIC.msg_res').replace('<total>', str(len(days)))
             reply_markup = InlineKeyboardMarkup()
             for day in days:
                 row = await get_day_row_info(day)

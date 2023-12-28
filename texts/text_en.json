@@ -20,7 +20,7 @@
         "by_name":"Enter a word. List of public events whose name contains provided word will be returned",
         "by_desc":"Enter a word. List of public events whose description contains provided word will be returned",
         "action":"What do you want to do with event <event_name>?",
-        "confirm":"succesfully subscribed to event <event_name>!"
+        "confirm":"succesfully subscribed to event <event_name>!",
+        "msg_res": "There are <total> events that match your filter and to whom you are not subscribed:\n\n"
     }
 }
-
