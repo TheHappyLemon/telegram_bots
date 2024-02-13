@@ -23,9 +23,9 @@ async def export_to_csv(**kwargs):
     usr_id = kwargs['usr_id']
     usr_name = kwargs['usr_name']
     days = await get_query(f'''
-        SELECT DAYS.name AS 'event name', DAYS.day AS 'date', DAYS.descr AS 'description', USERS.name AS 'creator', DAYS.acces, DAYS.delIfInPast AS 'Delete after execution',
-        DAYS.format AS type, DAYS.period, DAYS.period_am AS 'period amount', WEEKDAY_prm.weekday, WEEKDAY_prm.occurence, WEEKDAY_prm.month, CONTINIOUSDAY_prm.day_start AS 'start date',
-        CONTINIOUSDAY_prm.day_end  AS 'end date'
+        SELECT DAYS.name AS 'event_name', DAYS.day AS 'date', DAYS.descr AS 'description', USERS.name AS 'creator', DAYS.acces, DAYS.delIfInPast AS 'Delete_after_execution',
+        DAYS.format AS type, DAYS.period, DAYS.period_am AS 'period_amount', WEEKDAY_prm.weekday, WEEKDAY_prm.occurence, WEEKDAY_prm.month, CONTINIOUSDAY_prm.day_start AS 'start_date',
+        CONTINIOUSDAY_prm.day_end  AS 'end_date'
         FROM DAYS
         LEFT JOIN link ON DAYS.id = link.id1 AND link.format = 'days' AND link.opt = 'look'
         LEFT JOIN USERS ON (DAYS.who = USERS.tg_id)
@@ -59,7 +59,7 @@ async def add_from_csv(**kwargs):
 
 async def get_csv_header():
     # name;day;descr;who;acces;delifinpast;format;period;period_am;weekday;occurence;month;day_start;day_end;
-    return ["event name","date","description","creator","acces","Delete after execution","type","period","period amount","weekday","occurence","month","start date","end date"]
+    return ["event_name","date","description","creator","acces","Delete_after_execution","type","period","period_amount","weekday","occurence","month","start_date","end_date"]
 
 async def process_csv(usr_id : int, path : str):
     f = open(path, 'r', encoding='utf-8')
@@ -79,8 +79,8 @@ async def process_csv(usr_id : int, path : str):
     # Check if all columns have good names
     errors = []
     for i in range(len(csv_headers)):
-        if csv_headers[i].lower() != import_headers[i]:
-            errors.append(f"* {import_headers[i]} should be {csv_headers[i]} instead\n")
+        if csv_headers[i].lower() != import_headers[i].lower():
+            errors.append(f"* '{import_headers[i]}' should be '{csv_headers[i]}' instead\n")
     if len(errors) > 0:
         msg = f"Do not change column names! Column names should be in the same order when you export them. You have following erros:\n\n"
         for err in errors:
@@ -100,18 +100,18 @@ async def process_csv(usr_id : int, path : str):
         warnings[i] = []
         # format data...
         vDescr       = await escape_mysql(row['description'].lower().strip())
-        vName        = await escape_mysql(row['event name'].lower().strip())
+        vName        = await escape_mysql(row['event_name'].lower().strip())
         vDate        = row['date'].lower().strip()
         vType        = row['type'].lower().strip()
         vAcces       = row['acces'].lower().strip()
         vPeriod      = row['period'].lower().strip()
-        vPeriodAm    = row['period amount'].lower().strip()
+        vPeriodAm    = row['period_amount'].lower().strip()
         vWeekday     = row['weekday'].lower().strip()
         vOccurence   = row['occurence'].lower().strip()
         vMonth       = row['month'].lower().strip().capitalize()
-        vDayStart    = row['start date'].lower().strip()
-        vDayEnd      = row['end date'].lower().strip()
-        vDelIfInPast = row['delete after execution'].lower().strip()
+        vDayStart    = row['start_date'].lower().strip()
+        vDayEnd      = row['end_date'].lower().strip()
+        vDelIfInPast = row['delete_after_execution'].lower().strip()
         # check event type
         if vType == 'regular':
             vType = '0'
@@ -144,9 +144,11 @@ async def process_csv(usr_id : int, path : str):
                 warnings[i].append("Date should not be provided for irregular events. It will be ignored")
             elif vType == "2":
                 warnings[i].append("Date should not be provided for continious events. It will be ignored and set to date start if it is provided")
-        elif vType == "0":
-            vDate = "NULL"
-            warnings[i].append("Date not provided")
+        else:
+            if vType == "0":
+                warnings[i].append("Date not provided")
+            else:
+                vDate = "NULL"
         # skip creator
         # check acces
         if vAcces > "":
@@ -268,7 +270,8 @@ async def process_csv(usr_id : int, path : str):
             warnings[i].append("End date is empty. Event will be repeated forever")
         # TODO escape fields for sql
         if len(errors[i]) == 0:
-            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES('{vDate}', '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}');\n")
+            tmpDate = vDate if vDate == 'NULL' else f"'{vDate}'"
+            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES({tmpDate}, '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}');\n")
             if vType == "1":
                 querries_add.append(f"UPDATE WEEKDAY_prm SET occurence = {vOccurence} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
                 querries_add.append(f"UPDATE WEEKDAY_prm SET month = {vMonth} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
