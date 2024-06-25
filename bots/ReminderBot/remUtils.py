@@ -19,16 +19,16 @@ from pytz import timezone
 import traceback
 import config
 
-async def get_new_file_name(file_extension, event_id):
+async def get_new_file_name(file_extension, event_id, prefix = ""):
     next_id = None
     data = await get_query(f"SELECT COUNT(*) AS 'amount' FROM DAYS_attachments WHERE day_id = {event_id}")
     if len(data) == 0:
         next_id = 1
     else:
         next_id = int(data[0]['amount']) + 1
-    filename = str(event_id) + "_" + str(next_id) + "" + file_extension
-    filename = path_attachment + filename
-    return filename
+    name = str(event_id) + "_" + str(next_id) + "" + file_extension
+    full_path = path_attachment + (f"{prefix}_" if prefix > "" else "") + name
+    return full_path
 
 async def get_attachments(**kwargs):
     event_id = kwargs['event_id']
@@ -1537,7 +1537,11 @@ async def send_file(usr_id : int, path : str, label : str, keyboard : InlineKeyb
     await insert_data(queries)
 
 async def send_file_by_id(usr_id : int, file_id : str, label : str, keyboard : InlineKeyboardMarkup):
-    message = await bot.send_document(usr_id, document=file_id)
+    # too lazy lol
+    try:
+        message = await bot.send_document(usr_id, document=file_id)
+    except BadRequest as e:
+        message = await bot.send_photo(usr_id, photo=file_id)
     if label > "" or keyboard != None:
         await edit_message(usr_id, label, keyboard)
     queries = [f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({usr_id}, {message.message_id})"]
