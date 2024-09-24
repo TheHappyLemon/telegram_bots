@@ -19,6 +19,33 @@ from pytz import timezone
 import traceback
 import config
 
+async def get_new_file_name(file_extension, event_id, prefix = ""):
+    next_id = None
+    data = await get_query(f"SELECT COUNT(*) AS 'amount' FROM DAYS_attachments WHERE day_id = {event_id}")
+    if len(data) == 0:
+        next_id = 1
+    else:
+        next_id = int(data[0]['amount']) + 1
+    name = str(event_id) + "_" + str(next_id) + "" + file_extension
+    full_path = path_attachment + (f"{prefix}_" if prefix > "" else "") + name
+    return full_path
+
+async def get_attachments(**kwargs):
+    event_id = kwargs['event_id']
+    usr_lang = kwargs['usr_lang']
+    event_name = kwargs['event_name']
+    usr_id = kwargs['usr_id']
+    attachments = await get_query(f"SELECT * FROM DAYS_attachments WHERE day_id = {event_id}")
+    msg = None
+    reply_markup = await get_back_btn(keyboard_id=13)
+    if len(attachments) == 0:
+        msg = config.lang_instance.get_text(usr_lang, 'FILES.attachments_none').replace('<event_name>', event_name)
+    else:
+        for attachment in attachments:
+            await send_file_by_id(usr_id, attachment['tg_file_id'], "", None)
+        msg = config.lang_instance.get_text(usr_lang, 'FILES.attachments_succes').replace('<event_name>', event_name).replace('<amount>', str(len(attachments)))
+    await edit_message(usr_id, msg, reply_markup)
+
 async def export_to_csv(**kwargs):
     usr_id = kwargs['usr_id']
     usr_name = kwargs['usr_name']
@@ -54,8 +81,15 @@ async def export_to_csv(**kwargs):
 
 async def add_from_csv(**kwargs):
     usr_id = kwargs['usr_id']
+    usr_lang = kwargs['usr_lang']
     reply_markup = await get_back_btn(keyboard_id=9)
-    await edit_message(usr_id, "Please provide me your csv file", reply_markup)
+    await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.get_file').replace('<file_type>', 'csv'), reply_markup)
+
+async def add_attachments(**kwargs):
+    usr_id = kwargs['usr_id']
+    usr_lang = kwargs['usr_lang']
+    reply_markup = await get_back_btn(keyboard_id=13)
+    await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.get_file').replace('<file_type>', ''), reply_markup)
 
 async def get_csv_header():
     # name;day;descr;who;acces;delifinpast;format;period;period_am;weekday;occurence;month;day_start;day_end;
@@ -323,7 +357,6 @@ async def process_csv(usr_id : int, path : str):
             f.writelines(querries_add)
             f.flush()
             f.close()
-        #async def confirm_choice(usr_id : int, callback_data : str, group : int, msg : str = ""):
         if msg > "":
             msg = msg + "\n\nImport events anyway? Lines with errors will be skipped, other will be imported"
         else:
@@ -716,6 +749,24 @@ async def pick_invitation(**kwargs):
             button = InlineKeyboardButton(text=txt, callback_data=f'INVITE_CHOOSEN;{invite["id"]}')
             keyboard.insert(button)
         keyboard = await add_back_btn(3, keyboard)
+    await edit_message(usr_id, msg, keyboard)
+    return ""
+
+async def pick_attachment(**kwargs):
+    usr_id     = kwargs['usr_id']
+    event_id   = kwargs['event_id']
+    event_name   = kwargs['event_name']
+    attachments = await get_query(f"SELECT real_name, id FROM DAYS_attachments d WHERE d.day_id = {event_id}")
+    if len(attachments) == 0:
+        msg = f"Event {event_name} has 0 attachments"
+        keyboard  = await get_back_btn(keyboard_id=13)
+    else:
+        msg = f"Choose an attachment"
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        for attachment in attachments:
+            button = InlineKeyboardButton(text=attachment['real_name'], callback_data=f'ATTACHMENT_CHOOSEN;{attachment["id"]}')
+            keyboard.insert(button)
+        keyboard = await add_back_btn(13, keyboard)
     await edit_message(usr_id, msg, keyboard)
     return ""
 
@@ -1313,6 +1364,17 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     queries.append(f"DELETE FROM DAYS_notifications WHERE id = {callback_data[2]}")
                 else:
                     msg = "Action aborted!"
+            elif user_sts == "ATTACHMENT_DELETE":
+                group = 13
+                if callback_data[1].lower() == "yes":
+                    msg = config.lang_instance.get_text(usr_lang, 'FILES.attachment_deleted')
+                    attachment = await get_query(f"SELECT system_path FROM DAYS_attachments WHERE id = {callback_data[2]}")
+                    attachment = attachment[0]['system_path']
+                    if os.path.isfile(path=attachment):
+                        os.remove(path=attachment)
+                    queries.append(f"DELETE FROM DAYS_attachments WHERE id = {callback_data[2]}")
+                else:
+                    msg = "Action aborted!"
             elif user_sts == 'blah blah':
                 pass
             queries.append(f"UPDATE USERS SET sts_chat = 'IDLE' WHERE tg_id = {usr_id};")
@@ -1344,6 +1406,9 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             keyboard = await get_back_btn(12)
             await insert_data(queries)
             await edit_message(usr_id, config.lang_instance.get_text(usr_lang, "PUBLIC.confirm").replace('<event_name>', callback_data[2]), keyboard)
+        elif action_type == "ATTACHMENT_CHOOSEN":
+            queries.append(f"UPDATE USERS SET last_keyboard = 13 WHERE tg_id = {usr_id};")
+            await confirm_choice(usr_id, callback_data[1], 13)
         elif action_type == "BUTTON_PRESSED":
             # save where user is right now
             queries.append(f"UPDATE USERS SET last_keyboard = {callback_data[3]}  WHERE tg_id = {usr_id};")
@@ -1468,6 +1533,17 @@ async def send_new_static_msg(usr_id : int, msg : str, reply_markup : InlineKeyb
 async def send_file(usr_id : int, path : str, label : str, keyboard : InlineKeyboardMarkup):
     message = await bot.send_document(usr_id, document=open(path, 'rb'))
     await edit_message(usr_id, label, keyboard)
+    queries = [f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({usr_id}, {message.message_id})"]
+    await insert_data(queries)
+
+async def send_file_by_id(usr_id : int, file_id : str, label : str, keyboard : InlineKeyboardMarkup):
+    # too lazy lol
+    try:
+        message = await bot.send_document(usr_id, document=file_id)
+    except BadRequest as e:
+        message = await bot.send_photo(usr_id, photo=file_id)
+    if label > "" or keyboard != None:
+        await edit_message(usr_id, label, keyboard)
     queries = [f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({usr_id}, {message.message_id})"]
     await insert_data(queries)
 

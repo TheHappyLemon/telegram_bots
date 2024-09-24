@@ -10,7 +10,7 @@
         "day_3":"In three days is",
         "week_1":"In one week is",
         "week_2":"In two weeks is",
-        "month_1":"In three is"
+        "month_1":"In one month is"
     },
     "MODIFY":{
         "modify_warning":"IMPORTANT!\n\nYou are the only redactor of event <event_name>\nIf you continue, this event will be deleted!",
@@ -22,5 +22,15 @@
         "action":"What do you want to do with event <event_name>?",
         "confirm":"succesfully subscribed to event <event_name>!",
         "msg_res": "There are <total> events that match your filter and to whom you are not subscribed:\n\n"
+    },
+    "FILES":{
+        "get_file":"Please, provide your <file_type> file",
+        "bad_type":"Attention!\nFile type <bad> is restricted. Only following files are allowed: <good>",
+        "too_big":"Sorry, file is too big. Max allowd size <max_size> MB, size of provided file is <file_size> MB",
+        "unknown":"Sorry, I dont know what you want from me",
+        "succes":"File has been succesfully added!",
+        "attachments_none":"Event '<event_name>' does not have any attachments!",
+        "attachments_succes":"Here you go! There are <amount> file/s attached to event <event_name>:\n",
+        "attachment_deleted":"Attachment succesfully deleted!"
     }
 }

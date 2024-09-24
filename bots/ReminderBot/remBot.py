@@ -5,32 +5,58 @@ from aiogram.types import ChatActions
 from dateutil.relativedelta import relativedelta
 import traceback
 
-@dp.message_handler(content_types=[types.ContentType.DOCUMENT])
+@dp.message_handler(content_types=[types.ContentType.DOCUMENT, types.ContentType.PHOTO])
 async def handle_document(message: types.Message):
     usr_id = message.from_user.id
-    user_data = await get_query(f"SELECT sts_chat, name FROM USERS WHERE tg_id = {usr_id}")
+    user_data = await get_query(f"SELECT sts_chat, name, language, last_keyboard, event_id FROM USERS WHERE tg_id = {usr_id}")
+    # check if user exists
+    if len(user_data) == 0:
+        await start()
+        return
     user_sts = user_data[0]['sts_chat']
-    user_name = user_data[0]['name']
+    usr_name = user_data[0]['name']
+    usr_lang = user_data[0]['language']
+    event_id = user_data[0]['event_id']
+    reply_markup = await get_keyboard(group_id=user_data[0]['last_keyboard'], user_id=usr_id)
     # Save message
     querries = []
     querries.append(f"INSERT INTO DAYS_messages(chat_id, msg_id) VALUES({usr_id}, {message.message_id})")
-    if user_sts == "EVENTS_ADD_CSV":
-        # Check if the document is a CSV file
-        if message.document.mime_type == 'text/csv':
-            usr_name = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
-            usr_name = usr_name[0]['name']
-            # Download the file
-            path = f"{path_csv}/{usr_name}_import.csv"
-            await message.document.download(destination_file=path)
-            await process_csv(usr_id, path)
-    else:
-        querries.append(f"UPDATE USERS SET sts_chat= 'IDLE' WHERE tg_id = {usr_id};")
-        reply_markup = await get_query(f"SELECT last_keyboard FROM USERS WHERE tg_id = {usr_id}")
-        if len(reply_markup) == 0:
-            reply_markup = await get_keyboard(group_id=0, user_id=usr_id)
+    if message.content_type == types.ContentType.DOCUMENT:
+        file_name = message.document.file_name
+        file_extension = file_name[file_name.rfind('.'):].lower()
+        if user_sts == "EVENTS_ADD_CSV":
+            # Check if the document is a CSV file
+            if message.document.mime_type == 'text/csv':
+                # Download the file
+                path = f"{path_csv}/{usr_name}_import.csv"
+                await message.document.download(destination_file=path)
+                await process_csv(usr_id, path) 
+        elif user_sts == "MODIFY_ADD_FILE":
+            if message.document.file_size > MAX_ATTACHMENT_SIZE:
+                await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.too_big').replace('<file_size>', str(round(message.document.file_size / 1000000, 2))).replace('<max_size>', str(MAX_ATTACHMENT_SIZE / 1000000)), reply_markup)
+                return
+            if file_extension not in ALLOWED_EXTENSIONS:
+                await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.bad_type').replace('<bad>', file_extension).replace('<good>', ' '.join(ALLOWED_EXTENSIONS)), reply_markup)
+                return
+            new_file_name = await get_new_file_name(file_extension, event_id, "")
+            file_name = await escape_mysql(file_name)
+            await message.document.download(destination_file=new_file_name)
+            querries.append(f"INSERT INTO DAYS_attachments(day_id, system_path, tg_file_id, tg_file_unique_id, real_name) VALUES({event_id}, '{new_file_name}', '{message.document.file_id}', '{message.document.file_unique_id}', '{file_name}')")
+            await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.succes'), reply_markup)
         else:
-            reply_markup = await get_keyboard(group_id=reply_markup[0]['last_keyboard'], user_id=usr_id)
-        await edit_message(usr_id, "Sorry, I dont know what you want from me", reply_markup)
+            querries.append(f"UPDATE USERS SET sts_chat= 'IDLE' WHERE tg_id = {usr_id};")
+            await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.unknown'), reply_markup)
+    elif message.content_type == types.ContentType.PHOTO:
+        photo = message.photo[-1]  # Get the highest resolution photo
+        print(photo.file_size, MAX_ATTACHMENT_SIZE)
+        if photo.file_size > MAX_ATTACHMENT_SIZE:
+            await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.too_big').replace('file_size', str(round(photo.file_size / 1000000, 2))).replace('<max_size>', str(MAX_ATTACHMENT_SIZE / 1000000)), reply_markup)
+            return
+        # Default to jpg since Telegram typically sends as jpg
+        new_file_name = await get_new_file_name(".jpg", event_id, "photo")
+        await photo.download(destination_file=new_file_name)
+        querries.append(f"INSERT INTO DAYS_attachments(day_id, system_path, tg_file_id, tg_file_unique_id, real_name) VALUES({event_id}, '{new_file_name}', '{photo.file_id}', '{photo.file_unique_id}', '{os.path.basename(new_file_name)}')")
+        await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.succes'), reply_markup)
     await insert_data(querries)
 
 @dp.message_handler(commands=['ping'])
