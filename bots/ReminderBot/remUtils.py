@@ -1068,7 +1068,7 @@ async def get_help(**kwargs):
 async def calc_force(**kwargs):
     usr_id = kwargs['usr_id']
     reply_markup = await get_back_btn(keyboard_id=6)
-    response = await calculate_events(formats=[0,1,2])
+    response = await calculate_events(formats=[0,1,2], force=True)
     response = "Events were forcefully recaulculated:\n\n" +  response
     await edit_message(usr_id, response, reply_markup)
     return ""
@@ -1717,6 +1717,7 @@ async def reschedule(day : dict) -> None:
     querris = []
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
+    return vDate.strftime("%Y-%m-%d")
 
 async def get_day_info(day : dict, frmt : int):
     date = day['day']
@@ -1737,10 +1738,11 @@ async def isYes(text : str):
     return (text in ['y', 'ye', 'yes', 'yeah'])
 
 
-async def calculate_events(formats : list, ids : list = [], delta_days : timedelta = None):
+async def calculate_events(formats : list, ids : list = [], delta_days : timedelta = None, force : bool = False):
     # 0 - regular events
     # 1 - irregular events
     # 2 - continious events
+    # force - IGNORE!
     response = ""
     queris = []
     vToday = await get_today(delta_days)
@@ -1755,7 +1757,8 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
                 continue
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             if vDate < vToday:
-                await reschedule(day)
+                vNewDate = await reschedule(day)
+                response = response + "* Event " + f"{day['name']} " + f" is scheduled on {vNewDate}\n\n"
     if 1 in formats:
         queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN WEEKDAY_prm ON DAYS.id = WEEKDAY_prm.day_id WHERE format = 1 ORDER BY day;")
@@ -1764,10 +1767,13 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
                 continue
             if day['month'] == None or day['weekday'] == None or day['occurence'] == None:
                 continue
-            row = "* Event " + f"{day['descr']} "
-            v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
-            queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
-            row = row + f" is scheduled on {v_date}\n\n"
+
+            vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
+            if vDate < vToday:
+                v_date = find_day_in_month(datetime.now().year + 1, int(day['month']), int(day['weekday']), int(day['occurence']))
+                queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
+                response = response + "* Event " + f"{day['descr']} " + f" is scheduled on {v_date}\n\n"
+            
     if 2 in formats:
         queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE format = 2 ORDER BY day;")
@@ -1790,7 +1796,8 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
             # IF today is in period -> reschedule to next
             if vToday > vStart and vToday <= vEnd:
                 try:
-                    await reschedule(day)
+                    vNewDate = await reschedule(day)
+                    response = response + "* Event " + f"{day['name']} " + f" is scheduled on {vNewDate}\n\n"
                 except DateOutOfBounds as e:
                     if day['delIfInPast'] == "yes":
                         # send notification that event was deleted, because next calculated date is after end date

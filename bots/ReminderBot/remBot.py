@@ -86,15 +86,17 @@ async def delete_messages(message: types.Message):
     
     
 async def calculate_yearly(bot : Bot):
+    print("working")
     # calcualte only events that are irregular
     response = await calculate_events(formats=[1])
     response = "This is result from yearly event calculation!:\n\n" + response
     await send_msg(chat, response)
+    pass
 
 async def recalculate(delta_days : timedelta):
     # This function checks if a regular event that needs to be rescheduled, was not and reschedules it.
     # This function also reschedules all continious event if needed
-    response = await calculate_events(formats=[0,2], delta_days=delta_days)
+    response = await calculate_events(formats=[0,1,2], delta_days=delta_days)
     if response > "":
         response = "Daily recalculation result:\n\n" + response
         await send_msg(chat, response)
@@ -396,7 +398,7 @@ async def echo(message: types.Message):
 async def on_startup(dp : Dispatcher):
     # regular functions
     scheduler.add_job(remind_new, 'cron', minute='*/5', timezone='Europe/Kiev')
-    scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
+    #scheduler.add_job(calculate_yearly, 'cron', year='*', month='*', day='*', week='*', day_of_week='*', hour='*', minute='*', second='1', timezone='Europe/Kiev', args=(bot,))
     # launch at 23 57 with arg 1 = timedelta(days), so reschedule dates on tommorow, so notification at 00:00 works correctly
     scheduler.add_job(recalculate, 'cron', hour='23', minute='57', timezone='Europe/Kiev', args=(timedelta(days=1),))
     scheduler.add_job(calculate_dates, 'cron', hour='23', minute='57', timezone='Europe/Kiev', args=(1,))
