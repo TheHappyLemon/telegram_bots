@@ -152,22 +152,35 @@ async def remind_new():
     }
     '''
     time_first = await get_today_time("%H : %M")
+    #days = await get_query(f'''
+    #SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date
+    #FROM DAYS_notifications
+    #LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
+    #LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id)
+    #LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
+    #LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
+    #WHERE when_time = '{time_first}'
+    #AND link.format = 'days' AND link.opt = 'look' ORDER BY day
+    #''')
     days = await get_query(f'''
-    SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date
-    FROM DAYS_notifications
-    LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
-    LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id)
-    LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
-    LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
-    WHERE when_time = '{time_first}'
-    AND link.format = 'days' AND link.opt = 'look' ORDER BY day
+        SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date, DAYS_notifications.when_time, DAYS_notifications.id AS 'when_id', DAYS_notifications.day_id AS 'when_day_id'
+        FROM DAYS_notifications
+        LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
+        LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id) AND link.format = 'days' AND link.opt = 'look'
+        LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
+        LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
+        ORDER BY day;
     ''')
+    # Only days to whom notification should be sent now
+    filtered_days = [day for day in days if day['when_time'] == time_first]
     msgs = {}
-    for day in days:
+    for day in filtered_days:
         if day['day'] == None:
            continue
         path, answ = await check_day_new(day)
         if path != "":
+
+            send_attachments = await is_last_notific(day, days)
             if msgs.get(day['id']) == None:
                 msgs[day['id']] = {}
                 msgs[day['id']]['msg'] = answ.replace('<text_whn>', config.lang_instance.get_text(day['language'], path))
@@ -176,6 +189,30 @@ async def remind_new():
     for event in msgs:
         for usr_id in msgs[event]['users']:
             await send_msg(usr_id, msgs[event]['msg'])
+            await get_attachments(event_id=day['id'],usr_lang=day['language'],event_name=day['name'],usr_id=usr_id)
+
+async def is_last_notific(day : dict, days : list) -> bool:
+    
+    for event in days:
+        # only compare with notifications from the same day
+        if event['when_day_id'] != day['when_day_id']:
+            continue
+        # do not compare with itself
+        if event['when_id'] == day['when_id']:
+            continue
+        if await is_closer(day, event):
+            return False
+    return True
+
+# Function to compare two records
+async def is_closer(current, other):
+    # Compare `when_date` first
+    if date_priority[other['when_date']] < date_priority[current['when_date']]:
+        return True
+    elif date_priority[other['when_date']] == date_priority[current['when_date']]:
+        # Compare `when_time` (reverse order)
+        return other['when_time'] > current['when_time']
+    return False
 
 @dp.message_handler()
 async def echo(message: types.Message):
