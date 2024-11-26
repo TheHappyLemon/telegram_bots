@@ -1701,15 +1701,19 @@ async def get_tiny_date():
     return datetime(1, 1, 1).date()
     
 async def reschedule(day : dict) -> None:
+
+    if not day['format'] in ['0', '2']:
+        return None
+
     if day["period"] == None or int(day["period_am"]) == None:
         # if these fields are not provided event does not need to be rescheduled
         if day['delIfInPast'] == "yes" and day['format'] == '0':
-            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
-            # send notification that event was deleted, because period and period_am are not set and delIfInPast = true
             listeners = await get_event_listeners(day['id'], 'all')
+            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
+            # does this notification work at all??? TODO - check
             for listener in listeners:
                 await send_notification(listener['usr_id'], system_name, "Notification", f"Regular event {day['name']} was deleted, because period and period amount were not provided. Therefore it executes only once")
-        return
+        return None
     vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
     period = day["period"]
     amount = int(day["period_am"])
@@ -1749,8 +1753,6 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
     queris = []
     vToday = await get_today(delta_days)
     if 0 in formats:
-        # if some events were not rescheduled by mistake.
-        # For example, bot was offline
         days = await get_query("SELECT * FROM DAYS WHERE format = 0")
         for day in days:
             if day['day'] == None:
@@ -1760,9 +1762,9 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             if vDate < vToday:
                 vNewDate = await reschedule(day)
-                response = response + "* Event " + f"{day['name']} " + f" is scheduled on {vNewDate}\n\n"
+                if vNewDate != None:
+                    response = response + "* Event " + f"{day['name']} " + f" is scheduled on {vNewDate}\n\n"
     if 1 in formats:
-        queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN WEEKDAY_prm ON DAYS.id = WEEKDAY_prm.day_id WHERE format = 1 ORDER BY day;")
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
@@ -1777,7 +1779,6 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
                 response = response + "* Event " + f"{day['descr']} " + f" is scheduled on {v_date}\n\n"
             
     if 2 in formats:
-        queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE format = 2 ORDER BY day;")
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
@@ -1990,5 +1991,3 @@ def find_day_in_month(year, month, day_of_week, occurrence):
 
 def replace_spaces(match):
     return match.group(0).replace(' ', delim)
-
-
