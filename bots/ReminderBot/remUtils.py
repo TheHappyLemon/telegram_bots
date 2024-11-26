@@ -35,6 +35,7 @@ async def get_attachments(**kwargs):
     usr_lang = kwargs['usr_lang']
     event_name = kwargs['event_name']
     usr_id = kwargs['usr_id']
+    edit_msg = kwargs.get("edit_msg", True)
     attachments = await get_query(f"SELECT * FROM DAYS_attachments WHERE day_id = {event_id}")
     msg = None
     reply_markup = await get_back_btn(keyboard_id=13)
@@ -44,7 +45,8 @@ async def get_attachments(**kwargs):
         for attachment in attachments:
             await send_file_by_id(usr_id, attachment['tg_file_id'], "", None)
         msg = config.lang_instance.get_text(usr_lang, 'FILES.attachments_succes').replace('<event_name>', event_name).replace('<amount>', str(len(attachments)))
-    await edit_message(usr_id, msg, reply_markup)
+    if edit_msg:
+        await edit_message(usr_id, msg, reply_markup)
 
 async def export_to_csv(**kwargs):
     usr_id = kwargs['usr_id']

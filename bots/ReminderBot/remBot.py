@@ -189,7 +189,8 @@ async def remind_new():
     for event in msgs:
         for usr_id in msgs[event]['users']:
             await send_msg(usr_id, msgs[event]['msg'])
-            await get_attachments(event_id=day['id'],usr_lang=day['language'],event_name=day['name'],usr_id=usr_id)
+            if send_attachments:
+                await get_attachments(event_id=day['id'],usr_lang=day['language'],event_name=day['name'],usr_id=usr_id,edit_msg=False)
 
 async def is_last_notific(day : dict, days : list) -> bool:
     
