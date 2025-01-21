@@ -35,6 +35,7 @@ async def get_attachments(**kwargs):
     usr_lang = kwargs['usr_lang']
     event_name = kwargs['event_name']
     usr_id = kwargs['usr_id']
+    edit_msg = kwargs.get("edit_msg", True)
     attachments = await get_query(f"SELECT * FROM DAYS_attachments WHERE day_id = {event_id}")
     msg = None
     reply_markup = await get_back_btn(keyboard_id=13)
@@ -44,7 +45,8 @@ async def get_attachments(**kwargs):
         for attachment in attachments:
             await send_file_by_id(usr_id, attachment['tg_file_id'], "", None)
         msg = config.lang_instance.get_text(usr_lang, 'FILES.attachments_succes').replace('<event_name>', event_name).replace('<amount>', str(len(attachments)))
-    await edit_message(usr_id, msg, reply_markup)
+    if edit_msg:
+        await edit_message(usr_id, msg, reply_markup)
 
 async def export_to_csv(**kwargs):
     usr_id = kwargs['usr_id']
@@ -1068,7 +1070,7 @@ async def get_help(**kwargs):
 async def calc_force(**kwargs):
     usr_id = kwargs['usr_id']
     reply_markup = await get_back_btn(keyboard_id=6)
-    response = await calculate_events(formats=[0,1,2])
+    response = await calculate_events(formats=[0,1,2], force=True)
     response = "Events were forcefully recaulculated:\n\n" +  response
     await edit_message(usr_id, response, reply_markup)
     return ""
@@ -1699,15 +1701,19 @@ async def get_tiny_date():
     return datetime(1, 1, 1).date()
     
 async def reschedule(day : dict) -> None:
+
+    if not day['format'] in ['0', '2']:
+        return None
+
     if day["period"] == None or int(day["period_am"]) == None:
         # if these fields are not provided event does not need to be rescheduled
         if day['delIfInPast'] == "yes" and day['format'] == '0':
-            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
-            # send notification that event was deleted, because period and period_am are not set and delIfInPast = true
             listeners = await get_event_listeners(day['id'], 'all')
+            await insert_data([f"DELETE FROM DAYS WHERE id = {day['id']}"])
+            # does this notification work at all??? TODO - check
             for listener in listeners:
                 await send_notification(listener['usr_id'], system_name, "Notification", f"Regular event {day['name']} was deleted, because period and period amount were not provided. Therefore it executes only once")
-        return
+        return None
     vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
     period = day["period"]
     amount = int(day["period_am"])
@@ -1717,6 +1723,7 @@ async def reschedule(day : dict) -> None:
     querris = []
     querris.append(f'UPDATE DAYS SET day = DATE("{vDate.strftime("%Y-%m-%d")}") WHERE id = {day["id"]}')
     await insert_data(querris)
+    return vDate.strftime("%Y-%m-%d")
 
 async def get_day_info(day : dict, frmt : int):
     date = day['day']
@@ -1737,16 +1744,15 @@ async def isYes(text : str):
     return (text in ['y', 'ye', 'yes', 'yeah'])
 
 
-async def calculate_events(formats : list, ids : list = [], delta_days : timedelta = None):
+async def calculate_events(formats : list, ids : list = [], delta_days : timedelta = None, force : bool = False):
     # 0 - regular events
     # 1 - irregular events
     # 2 - continious events
+    # force - IGNORE!
     response = ""
     queris = []
     vToday = await get_today(delta_days)
     if 0 in formats:
-        # if some events were not rescheduled by mistake.
-        # For example, bot was offline
         days = await get_query("SELECT * FROM DAYS WHERE format = 0")
         for day in days:
             if day['day'] == None:
@@ -1755,21 +1761,24 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
                 continue
             vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             if vDate < vToday:
-                await reschedule(day)
+                vNewDate = await reschedule(day)
+                if vNewDate != None:
+                    response = response + "* Event " + f"{day['name']} " + f" is scheduled on {vNewDate}\n\n"
     if 1 in formats:
-        queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN WEEKDAY_prm ON DAYS.id = WEEKDAY_prm.day_id WHERE format = 1 ORDER BY day;")
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
                 continue
             if day['month'] == None or day['weekday'] == None or day['occurence'] == None:
                 continue
-            row = "* Event " + f"{day['descr']} "
-            v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
-            queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
-            row = row + f" is scheduled on {v_date}\n\n"
+
+            vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
+            if vDate < vToday:
+                v_date = find_day_in_month(datetime.now().year + 1, int(day['month']), int(day['weekday']), int(day['occurence']))
+                queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
+                response = response + "* Event " + f"{day['descr']} " + f" is scheduled on {v_date}\n\n"
+            
     if 2 in formats:
-        queris = []
         days = await get_query("SELECT * FROM DAYS INNER JOIN CONTINIOUSDAY_prm ON DAYS.id = CONTINIOUSDAY_prm.day_id WHERE format = 2 ORDER BY day;")
         for day in days:
             if len(ids) > 0 and day['id'] not in ids:
@@ -1790,7 +1799,8 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
             # IF today is in period -> reschedule to next
             if vToday > vStart and vToday <= vEnd:
                 try:
-                    await reschedule(day)
+                    vNewDate = await reschedule(day)
+                    response = response + "* Event " + f"{day['name']} " + f" is scheduled on {vNewDate}\n\n"
                 except DateOutOfBounds as e:
                     if day['delIfInPast'] == "yes":
                         # send notification that event was deleted, because next calculated date is after end date
@@ -1981,5 +1991,3 @@ def find_day_in_month(year, month, day_of_week, occurrence):
 
 def replace_spaces(match):
     return match.group(0).replace(' ', delim)
-
-

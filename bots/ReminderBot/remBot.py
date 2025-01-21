@@ -32,6 +32,9 @@ async def handle_document(message: types.Message):
                 await message.document.download(destination_file=path)
                 await process_csv(usr_id, path) 
         elif user_sts == "MODIFY_ADD_FILE":
+            if message.document.file_size > MAX_ATTACHMENT_SIZE:
+                await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.too_big').replace('<file_size>', str(round(message.document.file_size / 1000000, 2))).replace('<max_size>', str(MAX_ATTACHMENT_SIZE / 1000000)), reply_markup)
+                return
             if file_extension not in ALLOWED_EXTENSIONS:
                 await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.bad_type').replace('<bad>', file_extension).replace('<good>', ' '.join(ALLOWED_EXTENSIONS)), reply_markup)
                 return
@@ -45,6 +48,10 @@ async def handle_document(message: types.Message):
             await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.unknown'), reply_markup)
     elif message.content_type == types.ContentType.PHOTO:
         photo = message.photo[-1]  # Get the highest resolution photo
+        print(photo.file_size, MAX_ATTACHMENT_SIZE)
+        if photo.file_size > MAX_ATTACHMENT_SIZE:
+            await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.too_big').replace('file_size', str(round(photo.file_size / 1000000, 2))).replace('<max_size>', str(MAX_ATTACHMENT_SIZE / 1000000)), reply_markup)
+            return
         # Default to jpg since Telegram typically sends as jpg
         new_file_name = await get_new_file_name(".jpg", event_id, "photo")
         await photo.download(destination_file=new_file_name)
@@ -79,15 +86,17 @@ async def delete_messages(message: types.Message):
     
     
 async def calculate_yearly(bot : Bot):
+    print("working")
     # calcualte only events that are irregular
     response = await calculate_events(formats=[1])
     response = "This is result from yearly event calculation!:\n\n" + response
     await send_msg(chat, response)
+    pass
 
 async def recalculate(delta_days : timedelta):
     # This function checks if a regular event that needs to be rescheduled, was not and reschedules it.
     # This function also reschedules all continious event if needed
-    response = await calculate_events(formats=[0,2], delta_days=delta_days)
+    response = await calculate_events(formats=[0,1,2], delta_days=delta_days)
     if response > "":
         response = "Daily recalculation result:\n\n" + response
         await send_msg(chat, response)
@@ -143,22 +152,35 @@ async def remind_new():
     }
     '''
     time_first = await get_today_time("%H : %M")
+    #days = await get_query(f'''
+    #SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date
+    #FROM DAYS_notifications
+    #LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
+    #LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id)
+    #LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
+    #LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
+    #WHERE when_time = '{time_first}'
+    #AND link.format = 'days' AND link.opt = 'look' ORDER BY day
+    #''')
     days = await get_query(f'''
-    SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date
-    FROM DAYS_notifications
-    LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
-    LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id)
-    LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
-    LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
-    WHERE when_time = '{time_first}'
-    AND link.format = 'days' AND link.opt = 'look' ORDER BY day
+        SELECT DAYS.*, USERS.language, USERS.tg_id, DAYS_notifications.when_date, DAYS_notifications.when_time, DAYS_notifications.id AS 'when_id', DAYS_notifications.day_id AS 'when_day_id'
+        FROM DAYS_notifications
+        LEFT JOIN DAYS ON (DAYS.id = DAYS_notifications.day_id)
+        LEFT JOIN link ON (link.id1 = DAYS_notifications.day_id) AND link.format = 'days' AND link.opt = 'look'
+        LEFT JOIN CONTINIOUSDAY_prm ON (CONTINIOUSDAY_prm.day_id = DAYS_notifications.day_id)
+        LEFT JOIN USERS ON (link.usr_id = USERS.tg_id)
+        ORDER BY day;
     ''')
+    # Only days to whom notification should be sent now
+    filtered_days = [day for day in days if day['when_time'] == time_first]
     msgs = {}
-    for day in days:
+    for day in filtered_days:
         if day['day'] == None:
            continue
         path, answ = await check_day_new(day)
         if path != "":
+
+            send_attachments = await is_last_notific(day, days)
             if msgs.get(day['id']) == None:
                 msgs[day['id']] = {}
                 msgs[day['id']]['msg'] = answ.replace('<text_whn>', config.lang_instance.get_text(day['language'], path))
@@ -167,6 +189,31 @@ async def remind_new():
     for event in msgs:
         for usr_id in msgs[event]['users']:
             await send_msg(usr_id, msgs[event]['msg'])
+            if send_attachments:
+                await get_attachments(event_id=day['id'],usr_lang=day['language'],event_name=day['name'],usr_id=usr_id,edit_msg=False)
+
+async def is_last_notific(day : dict, days : list) -> bool:
+    
+    for event in days:
+        # only compare with notifications from the same day
+        if event['when_day_id'] != day['when_day_id']:
+            continue
+        # do not compare with itself
+        if event['when_id'] == day['when_id']:
+            continue
+        if await is_closer(day, event):
+            return False
+    return True
+
+# Function to compare two records
+async def is_closer(current, other):
+    # Compare `when_date` first
+    if date_priority[other['when_date']] < date_priority[current['when_date']]:
+        return True
+    elif date_priority[other['when_date']] == date_priority[current['when_date']]:
+        # Compare `when_time` (reverse order)
+        return other['when_time'] > current['when_time']
+    return False
 
 @dp.message_handler()
 async def echo(message: types.Message):
@@ -389,7 +436,7 @@ async def echo(message: types.Message):
 async def on_startup(dp : Dispatcher):
     # regular functions
     scheduler.add_job(remind_new, 'cron', minute='*/5', timezone='Europe/Kiev')
-    scheduler.add_job(calculate_yearly, 'cron', year='*', month='1', day='1', week='*', day_of_week='*', hour='15', minute='0', second='0', timezone='Europe/Kiev', args=(bot,))
+    #scheduler.add_job(calculate_yearly, 'cron', year='*', month='*', day='*', week='*', day_of_week='*', hour='*', minute='*', second='1', timezone='Europe/Kiev', args=(bot,))
     # launch at 23 57 with arg 1 = timedelta(days), so reschedule dates on tommorow, so notification at 00:00 works correctly
     scheduler.add_job(recalculate, 'cron', hour='23', minute='57', timezone='Europe/Kiev', args=(timedelta(days=1),))
     scheduler.add_job(calculate_dates, 'cron', hour='23', minute='57', timezone='Europe/Kiev', args=(1,))
