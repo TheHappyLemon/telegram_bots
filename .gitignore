@@ -1,7 +1,10 @@
-# lol
-#*.sql
-# decided to track sql files, because i dont want to lose them and this db is not needed to anyone so.. idc lol 
-# sys
+# My custom ignores 
+# Remote - ssh (vscode extension)
+.vscode-server/
+.wget-hsts
+# other
+.tig_history
+.gitconfig
 files/attachments
 jobs.txt
 .lesshst

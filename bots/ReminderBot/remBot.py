@@ -59,6 +59,16 @@ async def handle_document(message: types.Message):
         await edit_message(usr_id, config.lang_instance.get_text(usr_lang, 'FILES.succes'), reply_markup)
     await insert_data(querries)
 
+@dp.message_handler(commands=['restart'])
+async def mytest(message: types.Message):
+    usr_id = message.from_user.id
+    if message.from_user.id != int(chat):
+        return
+    await send_msg(message.from_user.id, f"Restarting myself!")
+    os.environ["WAS_RESTARTED"] = "True"
+    os.environ["RESTARTED_BY"]  = str(chat)
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
 @dp.message_handler(commands=['ping'])
 async def ping(message: types.Message):
     usr_id = message.from_user.id
@@ -445,6 +455,10 @@ async def on_startup(dp : Dispatcher):
     result_dict = {item['lang']: item['json'] for item in langs}
     config.lang_instance.initialize(result_dict)
     # global dates
+    if os.getenv("WAS_RESTARTED", "False") == "True":
+        await send_msg(int(os.getenv("RESTARTED_BY", chat)), "Succesfully restarted!")
+        os.environ["WAS_RESTARTED"] = "False"
+        os.environ["RESTARTED_BY"]  = ""
     await calculate_dates(0)
 
 if __name__ == '__main__':
