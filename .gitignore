@@ -1,4 +1,4 @@
-# My custom ignores 
+# My custom ignores
 # Remote - ssh (vscode extension)
 .vscode-server/
 .wget-hsts
