@@ -19,7 +19,8 @@ class spotifyUpdater:
         self.today = (datetime.today() - timedelta(hours=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
         self.last_update = last_update
         self.response = ""
-
+        
+        #
         cache_one = CacheFileHandler(".cache_one", "first")
         cache_two = CacheFileHandler(".cache_two", "second")
 
@@ -113,12 +114,13 @@ class spotifyUpdater:
         tracks_two = self.get_user_tracks(self.sp_two)
         tracks_one.extend(tracks_two)
         tracks_playlist = self.get_playlist_tracks(dest_id)
+        track_uris = [item['track']['uri'] for item in tracks_playlist if 'track' in item and 'uri' in item['track']]
         #last_date = datetime.strptime(self.last_update, '%Y-%m-%dT%H:%M:%SZ')
-        
+
         for track in tracks_one:
             #added_day = datetime.strptime(track['added_at'], '%Y-%m-%dT%H:%M:%SZ')
             # if added_day > last_date and track['track']['uri'] not in tracks_playlist:
-            if not track['track']['uri'] in tracks_playlist:
+            if not track['track']['uri'] in track_uris:
                 i = i + 1
                 self.response = self.response + str(i) + ")" + " " +  track['track']['artists'][0]['name'] +  " - " + track['track']['name'] + '\n'
                 result.append(track['track']['uri'])
