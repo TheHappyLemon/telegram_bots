@@ -3,6 +3,9 @@
 .vscode-server/
 .wget-hsts
 # other
+.dotnet/
+bots/SpotifyBot/.cache_one
+bots/SpotifyBot/.cache_two
 .tig_history
 .gitconfig
 files/attachments

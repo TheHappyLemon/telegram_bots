@@ -1,7 +1,8 @@
 from telegram import *
 from telegram.ext import *
 from constants import *
-from os import kill, getpid
+from os import kill, getpid, environ, execl, getenv
+import sys
 from random import randint
 from spotifyClass import spotifyUpdater
 
@@ -21,9 +22,27 @@ class tBot:
         self.up = Updater(token, use_context=True)
         self.dp = self.up.dispatcher
         self.dp.add_handler(CommandHandler("start", self.__start__))
+        self.dp.add_handler(CommandHandler("ping", self.__ping__))
+        self.dp.add_handler(CommandHandler("restart", self.__restart__))
         self.dp.add_handler(MessageHandler(Filters.text, self.__message_handler__))
         self.is_updating_spotify = False
         self.need_answ = False
+        self.spoti = spotifyUpdater()
+
+    def __ping__(self, update, context):
+        user = update.message.from_user
+        if not self.__check_permission__(user["id"], "admin"):
+            return
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Allive,  " + user["username"] + "!")
+
+    def __restart__(self, update, context):
+        user = update.message.from_user
+        if not self.__check_permission__(user["id"], "admin"):
+            return
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Restarting myself!")
+        environ["WAS_RESTARTED"] = "True"
+        environ["RESTARTED_BY"]  = str(user["id"])
+        execl(sys.executable, sys.executable, *sys.argv)
 
     def run(self):
         self.up.start_polling()
@@ -48,15 +67,20 @@ class tBot:
             update.message.reply_text(answers[randint(0, len(answers) - 1)])
 
     def __update_playlist__(self, update, context):
+        songs = ""
+
         user = update.message.from_user
         if self.is_updating_spotify:
             update.message.reply_text("I'm still proccesing previous request...")
             return
         if self.__check_permission__(user["id"], "spotify") and not self.is_updating_spotify:
             self.is_updating_spotify = True
-            self.spoti = spotifyUpdater()
             update.message.reply_text(self.spoti.get_header())
-            update.message.reply_text(self.spoti.gather_songs())
+
+            songs = self.spoti.gather_songs()
+            for i in range(0, len(songs), 4096):
+                update.message.reply_text(songs[i:i+4096])
+
             buttons = self.__form_buttons__(user["id"], conf_buttons)
             context.bot.send_message(chat_id=update.effective_chat.id, text="Should I add them, " +  user["username"] + "?",
                           reply_markup = ReplyKeyboardMarkup(buttons))
@@ -72,12 +96,12 @@ class tBot:
             kill(getpid(), signal.SIGINT)
 
     def __message_handler__(self, update, context):
-        # try:
-        func = getattr(self, "__" + update.message.text.replace(" ", "_").lower() + "__")
-        func(update, context)
-        # except AttributeError:
-            # print('sry')
-            # context.bot.send_message(chat_id=update.effective_chat.id, text=answers[randint(0, len(answers) - 1)])
+        try:
+            func = getattr(self, "__" + update.message.text.replace(" ", "_").lower() + "__")
+            func(update, context)
+        except AttributeError:
+            print('sry')
+            context.bot.send_message(chat_id=update.effective_chat.id, text=answers[randint(0, len(answers) - 1)])
 
         if update.message.text in main_buttons:
             pass
