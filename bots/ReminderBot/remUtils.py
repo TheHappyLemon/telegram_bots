@@ -20,6 +20,40 @@ from pytz import timezone
 import traceback
 import config
 
+async def create_invitation(recepient_name : str, sender_id : int, warn: str, inv: str, opt: str) -> str:
+    response = ""
+    querries = []
+    
+    usr_to = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{recepient_name}'")
+    if len(usr_to) == 0:
+        response = f"Invitation not send:\nUser {recepient_name} not found."
+        return response
+
+    usr_to = usr_to[0]['tg_id']
+    is_listening = await get_query(f"SELECT id FROM link WHERE usr_id = {usr_to} AND id1 = (SELECT event_id FROM USERS WHERE tg_id = {sender_id}) AND format = 'days' AND opt = {opt}")
+    if len(is_listening) != 0:
+        response = f" Invitation not send\n\nUser is already {warn}."
+        return response
+
+    event_answ = await get_query(f"SELECT * FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {sender_id})")
+    event_answ = event_answ[0]
+    querries.append(f"INSERT INTO DAYS_invites(usr_from, usr_to, day_id, type) VALUES({sender_id}, {usr_to}, {event_answ['id']}, {opt})")
+    await insert_data(querries)
+    
+    # Notify user that he received an invitation
+    notification = await get_day_info(day=event_answ, frmt=0)
+    author = await get_query(f"SELECT name FROM USERS WHERE tg_id = {sender_id}")
+    author = author[0]
+    author = await author_link(author['name'], sender_id)
+    notification = f" has sent you a {inv} invitation!\n\n" + notification
+    notification = notification + "\n\nGo to 'My invitaions' to accept or reject this invitation."
+    notification = await parse_msg(notification)
+    notification = f"User {author}" + notification
+    await send_notification(usr_to, system_name, "Notification", notification, "Markdown")
+    response = f"Invitation sent to user {recepient_name}"
+
+    return response
+
 async def get_new_file_name(file_extension, event_id, prefix = ""):
     next_id = None
     data = await get_query(f"SELECT COUNT(*) AS 'amount' FROM DAYS_attachments WHERE day_id = {event_id}")
@@ -99,7 +133,7 @@ async def get_csv_header():
     return ["event_name","date","description","creator","acces","Delete_after_execution","type","period","period_amount","weekday","occurence","month","start_date","end_date"]
 
 async def process_csv(usr_id : int, path : str):
-    f = open(path, 'r', encoding='utf-8')
+    f = open(path, 'r', encoding='utf-8-sig') # utf-8 = no BOM | utf-8-sig - for BOM reading
     reader = csv.DictReader(f)
     csv_headers = await get_csv_header()
     reader.fieldnames = [header.lower().strip() for header in reader.fieldnames]
@@ -107,17 +141,22 @@ async def process_csv(usr_id : int, path : str):
     keyboard = await get_back_btn(keyboard_id=9)
     # Check column amount in csv
     if len(csv_headers) != len(import_headers):
-        msg = f"Do not change columns! Your csv has {len(import_headers)} columns, while it should have exactly {len(csv_headers)} columns:\n\n"
-        for header in csv_headers:
-            msg = msg + header + ", "
-        msg = msg.strip().strip(',')
-        await edit_message(usr_id, msg, keyboard)
-        return
+        # difference can be one column = invite_users - ';' separated list of users to invite automatically
+        if abs(len(csv_headers) - len(import_headers)) != 1:
+            msg = f"Do not change columns! Your csv has {len(import_headers)} columns, while it should have exactly {len(csv_headers)} columns:\n\n"
+            for header in csv_headers:
+                msg = msg + header + ", "
+            msg = msg.strip().strip(',')
+            await edit_message(usr_id, msg, keyboard)
+            return
     # Check if all columns have good names
     errors = []
     for i in range(len(csv_headers)):
         if csv_headers[i].lower() != import_headers[i].lower():
             errors.append(f"* '{import_headers[i]}' should be '{csv_headers[i]}' instead\n")
+    if len(csv_headers) != len(import_headers) and len(import_headers) - len(csv_headers) == 1:
+        if import_headers[-1] != "invite_users":
+            errors.append("For input you can add only one additional column 'invite_users'. Should be a list of usernames to whom send invites (sep = ;)")
     if len(errors) > 0:
         msg = f"Do not change column names! Column names should be in the same order when you export them. You have following erros:\n\n"
         for err in errors:
@@ -128,6 +167,7 @@ async def process_csv(usr_id : int, path : str):
     flg_wrn = False
     querries = []
     querries_add = []
+    querries_invites = []
     errors = {}
     warnings = {}
     i = 1
@@ -149,6 +189,7 @@ async def process_csv(usr_id : int, path : str):
         vDayStart    = row['start_date'].lower().strip()
         vDayEnd      = row['end_date'].lower().strip()
         vDelIfInPast = row['delete_after_execution'].lower().strip()
+        vUsers       = row.get('invite_users', "").lower().strip()
         # check event type
         if vType == 'regular':
             vType = '0'
@@ -305,6 +346,24 @@ async def process_csv(usr_id : int, path : str):
         elif vType == '2':
             vDayEnd = "NULL"
             warnings[i].append("End date is empty. Event will be repeated forever")
+        # Send invites to users
+        if vUsers != "":
+            # YEAH THIS IS SHIT. because I send invitation before events were actually created, but i dont really care actually
+            users = vUsers.split(";")
+            for user in users:
+                usr_to = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{user}'")
+                if len(usr_to) == 0:
+                    warnings[i].append(f"'{user}' does not exist. Invitation will not be sent")
+                    continue
+                usr_to = usr_to[0]['tg_id']
+                if usr_id == int(usr_to):
+                    warnings[i].append(f"You can not send an invitation to youself. Invitation will not be sent")
+                    print()
+                    continue
+                querries_invites.append(f"INSERT INTO DAYS_invites(usr_from, usr_to, day_id, type) SELECT {usr_id}, {usr_to}, id, 'look' FROM DAYS WHERE name = '{vName}' AND who = {usr_id};\n")
+                # response = await create_invitation(user, usr_id, 'subscribed to this event', "'subscriber'", "'look'")
+                # I can`t do so, because DAYS_invites has a FK to DAYS... So I have to send invitation after I create DAYS
+                # But days are created after confirmation buttons is pressed.
         # TODO escape fields for sql
         if len(errors[i]) == 0:
             tmpDate = vDate if vDate == 'NULL' else f"'{vDate}'"
@@ -358,6 +417,12 @@ async def process_csv(usr_id : int, path : str):
             files = '2'
             f = open(f"{path_querries}/{usr_id}_add.sql", 'w', encoding='utf-8')
             f.writelines(querries_add)
+            f.flush()
+            f.close()
+        if len(querries_invites) > 0:
+            files = '3'
+            f = open(f"{path_querries}/{usr_id}_invites.sql", 'w', encoding='utf-8')
+            f.writelines(querries_invites)
             f.flush()
             f.close()
         if msg > "":
@@ -1358,6 +1423,8 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_main.sql"])
                     if callback_data[2] == "2":
                         subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_add.sql"])
+                    if callback_data[2] == "3":
+                        subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_invites.sql"])
                 else:
                     msg = "Action aborted!"
             elif user_sts == "NOTIFIC_DEL":

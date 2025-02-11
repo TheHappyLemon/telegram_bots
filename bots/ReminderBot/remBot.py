@@ -294,34 +294,9 @@ async def echo(message: types.Message):
                 warn = 'redactor of this event'
                 inv  = "'redactor'"
                 opt = "'modify'"
-            usr_to = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{input}'")
+            msg = await create_invitation(input, usr_id, warn, inv, opt)
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
-            if len(usr_to) == 0:
-                msg = f"Invitation not send:\nUser {input} not found."
-            else:
-                usr_to = usr_to[0]['tg_id']
-                is_listening = await get_query(f"SELECT id FROM link WHERE usr_id = {usr_to} AND id1 = (SELECT event_id FROM USERS WHERE tg_id = {usr_id}) AND format = 'days' AND opt = {opt}")
-                if len(is_listening) != 0:
-                    msg = f" Invitation not send\n\nUser is already {warn}."
-                else:
-                    event_answ = await get_query(f"SELECT * FROM DAYS WHERE id = (SELECT event_id FROM USERS WHERE tg_id = {usr_id})")
-                    event_answ = event_answ[0]
-                    querries.append(f"INSERT INTO DAYS_invites(usr_from, usr_to, day_id, type) VALUES({usr_id}, {usr_to}, {event_answ['id']}, {opt})")
-                    await insert_data(querries)
-                    querries.clear()
-                    # Notify user that he received an invitation
-                    notification = await get_day_info(day=event_answ, frmt=0)
-                    author = await get_query(f"SELECT name FROM USERS WHERE tg_id = {usr_id}")
-                    author = author[0]
-                    author = await author_link(author['name'], usr_id)
-                    notification = f" has sent you a {inv} invitation!\n\n" + notification
-                    notification = notification + "\n\nGo to 'My invitaions' to accept or reject this invitation."
-                    notification = await parse_msg(notification)
-                    notification = f"User {author}" + notification
-                    await send_notification(usr_to, system_name, "Notification", notification, "Markdown")
-                    msg = f"Invitation sent to user {input}"
-                    clear_chat = False
-
+            clear_chat = False
         elif sts_chat == "MODIFY_NAME":
             keyboard = await get_keyboard(group_id=user_sts['last_keyboard'], user_id = usr_id)
             is_taken = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{input}'")
