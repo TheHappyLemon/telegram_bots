@@ -420,7 +420,7 @@ async def process_csv(usr_id : int, path : str):
             f.flush()
             f.close()
         if len(querries_invites) > 0:
-            files = '3'
+            files = files + ',3'
             f = open(f"{path_querries}/{usr_id}_invites.sql", 'w', encoding='utf-8')
             f.writelines(querries_invites)
             f.flush()
@@ -1421,9 +1421,12 @@ async def handle_button_press(callback_query: types.CallbackQuery):
                     # But I tested on 50 events at a time and all went OK, so I will leave it as it is for now
                     # I can use Popen.wait() but it blocks main thread, so bot will be unresponsive
                     subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_main.sql"])
-                    if callback_data[2] == "2":
+                    data_types = callback_data[2].split(",")
+                    if "2" in data_types:
+                        print("launched", f"{path_querries}/{callback_data[3]}_add.sql")
                         subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_add.sql"])
-                    if callback_data[2] == "3":
+                    if "3" in data_types:
+                        print("launched", f"{path_querries}/{callback_data[3]}_invites.sql")
                         subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_invites.sql"])
                 else:
                     msg = "Action aborted!"
