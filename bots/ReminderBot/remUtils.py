@@ -346,9 +346,21 @@ async def process_csv(usr_id : int, path : str):
         elif vType == '2':
             vDayEnd = "NULL"
             warnings[i].append("End date is empty. Event will be repeated forever")
-        # Send invites to users
+        # TODO escape fields for sql
+        if len(errors[i]) == 0:
+            tmpDate = vDate if vDate == 'NULL' else f"'{vDate}'"
+            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES({tmpDate}, '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}');\n")
+            if vType == "1":
+                querries.append(f"UPDATE WEEKDAY_prm SET occurence = {vOccurence} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id} LIMIT 1);\n")
+                querries.append(f"UPDATE WEEKDAY_prm SET month = {vMonth} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id} LIMIT 1);\n")
+                querries.append(f"UPDATE WEEKDAY_prm SET weekday = {vWeekday} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id} LIMIT 1);\n")
+            elif vType == "2":
+                querries.append(f"UPDATE CONTINIOUSDAY_prm SET day_start = '{vDayStart}' WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id} LIMIT 1);\n")
+                querries.append(f"UPDATE CONTINIOUSDAY_prm SET day_end = '{vDayEnd}' WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id} LIMIT 1);\n")
+        else:
+            flg_err = True
         if vUsers != "":
-            # YEAH THIS IS SHIT. because I send invitation before events were actually created, but i dont really care actually
+            # Send invites to users
             users = vUsers.split(";")
             for user in users:
                 usr_to = await get_query(f"SELECT tg_id FROM USERS WHERE name = '{user}'")
@@ -358,25 +370,11 @@ async def process_csv(usr_id : int, path : str):
                 usr_to = usr_to[0]['tg_id']
                 if usr_id == int(usr_to):
                     warnings[i].append(f"You can not send an invitation to youself. Invitation will not be sent")
-                    print()
                     continue
-                querries_invites.append(f"INSERT INTO DAYS_invites(usr_from, usr_to, day_id, type) SELECT {usr_id}, {usr_to}, id, 'look' FROM DAYS WHERE name = '{vName}' AND who = {usr_id};\n")
+                querries.append(f"INSERT INTO DAYS_invites(usr_from, usr_to, day_id, type) SELECT {usr_id}, {usr_to}, id, 'look' FROM DAYS WHERE name = '{vName}' AND who = {usr_id};\n")
                 # response = await create_invitation(user, usr_id, 'subscribed to this event', "'subscriber'", "'look'")
                 # I can`t do so, because DAYS_invites has a FK to DAYS... So I have to send invitation after I create DAYS
                 # But days are created after confirmation buttons is pressed.
-        # TODO escape fields for sql
-        if len(errors[i]) == 0:
-            tmpDate = vDate if vDate == 'NULL' else f"'{vDate}'"
-            querries.append(f"INSERT INTO DAYS(day, descr, period, period_am, format, who, name, acces, delIfInPast) VALUES({tmpDate}, '{vDescr}', '{vPeriod}', {vPeriodAm}, {vType}, {usr_id}, '{vName}', '{vAcces}', '{vDelIfInPast}');\n")
-            if vType == "1":
-                querries_add.append(f"UPDATE WEEKDAY_prm SET occurence = {vOccurence} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
-                querries_add.append(f"UPDATE WEEKDAY_prm SET month = {vMonth} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
-                querries_add.append(f"UPDATE WEEKDAY_prm SET weekday = {vWeekday} WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
-            elif vType == "2":
-                querries_add.append(f"UPDATE CONTINIOUSDAY_prm SET day_start = '{vDayStart}' WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
-                querries_add.append(f"UPDATE CONTINIOUSDAY_prm SET day_end = '{vDayEnd}' WHERE day_id = (SELECT id FROM DAYS WHERE name = '{vName}' AND who = {usr_id});\n")
-        else:
-            flg_err = True
         if len(warnings[i]) != 0:
             flg_wrn = True
     msg = ""
@@ -408,23 +406,13 @@ async def process_csv(usr_id : int, path : str):
             i = i + 1
         msg = msg + f" You have warnings in {i} rows:\n\n" + msg_warn
     if len(querries) > 0:
+        # insert transaction keywords
+        querries = ["START TRANSACTION;\n\n"] + querries + ["\nCOMMIT;\n"]
         files = '1'
         f = open(f"{path_querries}/{usr_id}_main.sql", 'w', encoding='utf-8')
         f.writelines(querries)
         f.flush()
         f.close()
-        if len(querries_add) > 0:
-            files = '2'
-            f = open(f"{path_querries}/{usr_id}_add.sql", 'w', encoding='utf-8')
-            f.writelines(querries_add)
-            f.flush()
-            f.close()
-        if len(querries_invites) > 0:
-            files = files + ',3'
-            f = open(f"{path_querries}/{usr_id}_invites.sql", 'w', encoding='utf-8')
-            f.writelines(querries_invites)
-            f.flush()
-            f.close()
         if msg > "":
             msg = msg + "\n\nImport events anyway? Lines with errors will be skipped, other will be imported"
         else:
@@ -1414,20 +1402,9 @@ async def handle_button_press(callback_query: types.CallbackQuery):
             elif user_sts == "EVENTS_ADD_CSV":
                 group = 9
                 if callback_data[1].lower() == "yes":
+                    # not perfect, because it cannot catch errors
                     msg = "Events are being created asynchronously. It may take a few seconds."
-                    # I want first file to execute first, to insert records in DAYS table
-                    # Second file needs ID from DAYS to update linked tables *_prm (it finds id by name + who)
-                    # I was afraid that becaue popen does not block main thread second file may start executing before first is finished
-                    # But I tested on 50 events at a time and all went OK, so I will leave it as it is for now
-                    # I can use Popen.wait() but it blocks main thread, so bot will be unresponsive
                     subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_main.sql"])
-                    data_types = callback_data[2].split(",")
-                    if "2" in data_types:
-                        print("launched", f"{path_querries}/{callback_data[3]}_add.sql")
-                        subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_add.sql"])
-                    if "3" in data_types:
-                        print("launched", f"{path_querries}/{callback_data[3]}_invites.sql")
-                        subprocess.Popen(['bash', path_querries_launch, f"{path_querries}/{callback_data[3]}_invites.sql"])
                 else:
                     msg = "Action aborted!"
             elif user_sts == "NOTIFIC_DEL":
