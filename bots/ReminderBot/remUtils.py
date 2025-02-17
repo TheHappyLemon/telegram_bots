@@ -1824,7 +1824,7 @@ async def calculate_events(formats : list, ids : list = [], delta_days : timedel
                 vDate = datetime.strptime(day['day'], "%Y-%m-%d").date()
             if day['day'] == None or vDate < vToday:
                 v_date = find_day_in_month(datetime.now().year, int(day['month']), int(day['weekday']), int(day['occurence']))
-                if v_date < vToday:
+                if datetime.strptime(v_date, "%Y-%m-%d").date() < vToday:
                     v_date = find_day_in_month(datetime.now().year + 1, int(day['month']), int(day['weekday']), int(day['occurence']))
                 queris.append(f"UPDATE DAYS SET day = '{v_date}' WHERE id = {day['id']}")
                 response = response + "* Event " + f"{day['descr']} " + f" is scheduled on {v_date}\n\n"
