@@ -2,6 +2,7 @@
 # Remote - ssh (vscode extension)
 .vscode-server/
 .wget-hsts
+google/credentials.json
 # other
 .dotnet/
 bots/SpotifyBot/.cache_one
